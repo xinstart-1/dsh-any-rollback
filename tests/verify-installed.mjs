@@ -14,8 +14,10 @@ const check = (ok, label, detail = '') => {
 }
 
 const pkg = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'))
+// 已装版本必须与仓库当前版本一致；此前这里写死了历史版本号，每次发版都会误报。
+const repo = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 check(pkg.name === 'dsh-any-rollback', '包名', pkg.name)
-check(pkg.version === '0.19.1-any.6', '版本 = any.5（本轮交付）', pkg.version)
+check(pkg.version === repo.version, `版本 = 仓库版本 ${repo.version}`, pkg.version)
 
 const hostCode = await readFile(join(installed, 'lib', 'index.js'), 'utf8')
 const trackCode = await readFile(join(installed, 'lib', 'artifact-track.js'), 'utf8')

@@ -48,9 +48,35 @@
    盖 `data-chat-flow-kind` 章，助手消息行**没有独立锚点**（2026-11-02 对 0.2.1-rc.5 产物反编译确认），
    无法安全定位 `< 2/2 >` 控件。与上游 audit.md U2（消息级动作槽缺失）同源。
    宿主开放锚点后可升级为按钮形态。
+   **更新（any.5 起）**：宿主随后开放了助手行动作槽，`lib/client.js` 已在每条助手回复上
+   注册 ↻ 按钮；翻页控件仍缺「当前第几版 / 共几版」的锚点，故仍未做。
 2. `/regen` 重发的是**原提示词文本**：图片附件不随重发（后续可接 `createDrafts` 补齐）。
 3. 重新生成会真实触发一轮 AI 执行（消耗模型调用、可能改动工作区），这是功能语义，使用前有提示。
 4. 负 key 预快照清单参与共享回收，被裁剪后同样不可再作为回退点（与正常清单一致）。
+
+## 实现状态核对（v0.19.1-any.9）
+
+对着真实宿主数据（`app.asar` 里的类型声明、`~/.dsh/sessions/…/session.v4.jsonl.zstd` 里的真实事件）
+核对了一遍，结论如下。
+
+**已按实测修正**
+
+- 命令入参字段是 `invocation.rawInput`；宿主 `CommandInvocation` 是
+  `{commandId, agent, rawInput, attachments, signal}`，**没有 `input`**。早先读 `invocation.input`
+  时恒为空串 → `help`/`list`/`v<N>` 三个分支永远进不去，点旧回复的 ↻ 还会退化成「重生成最新一轮」。
+- 标记事件的 `sourceEventSeqs` 是**事件顶层字段**（`append` 的第三个参数原样落盘），不在
+  `event.data` 里；宿主还会把连续区间压成嵌套数组（实测 `"sourceEventSeqs":[[585,587],589]`）。
+  统一走 `citedSeqsOf()` 展平取最小 seq。
+- `executeRegenerate` 与 `executeRegenSwitch` 中断在飞的回复后都要 `dropPendingSteering()`，
+  否则被中断那轮残留的 steering 会被随后的 `followup` 认领（与 `/rewind` 对齐）。
+
+**尚未在真机验证（需要一次真实点击 + 翻会话日志）**
+
+- 版本历史/版本切换依赖自定义字段 `event.data.op === "regenerate"`。宿主是否把消息对象上的
+  `data` 原样落盘尚未确认；若不落盘，`/regen list` 会一直显示「没有记录」、`/regen v<N>`
+  会答「暂不支持切回原始轮」。确认方法：点一次 ↻，再看日志里该标记事件是否带 `data.op`。
+- `/regen v<N>` 仍以被遮蔽区间的起点（`cited[0]`）作为回退目标；该 seq 若已被自己的标记
+  遮蔽，`planRewind` 会以 `not-on-surface` 拒绝。版本切换的定位方式需要按 marker 区间重做。
 
 ## 许可说明
 
