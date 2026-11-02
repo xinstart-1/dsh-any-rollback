@@ -15,7 +15,7 @@ const check = (ok, label, detail = '') => {
 
 const pkg = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'))
 check(pkg.name === 'dsh-any-rollback', '包名', pkg.name)
-check(pkg.version === '0.19.1-any.5', '版本 = any.5（本轮交付）', pkg.version)
+check(pkg.version === '0.19.1-any.6', '版本 = any.5（本轮交付）', pkg.version)
 
 const hostCode = await readFile(join(installed, 'lib', 'index.js'), 'utf8')
 const trackCode = await readFile(join(installed, 'lib', 'artifact-track.js'), 'utf8')
