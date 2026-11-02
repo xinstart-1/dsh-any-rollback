@@ -118,7 +118,7 @@ In the profile's `package.json`:
 
 ```json
 "dependencies": {
-  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.2/dsh-any-rollback-0.19.1-any.2.tgz"
+  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.3/dsh-any-rollback-0.19.1-any.3.tgz"
 }
 ```
 
@@ -136,7 +136,7 @@ actually loads the plugin.
 ### From a local clone
 
 ```json
-"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1-any.2.tgz"
+"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1-any.3.tgz"
 ```
 
 ## Requirements
@@ -158,9 +158,9 @@ Expected digests (SHA-256):
 | File | SHA-256 |
 | --- | --- |
 | `lib/index.js` | `7a724f18eadc9adc5d46e8eb28a31d8e39e5a3ceb82b6201810683abc2b64f26` |
-| `lib/artifact-track.js` | `cf81d7f58f604ae5c9d8102c51a00a815321e56927088c951e7d1f599089d88f` |
+| `lib/artifact-track.js` | `f1b85503f74763eb2bfec82ced93ba39f1d9ac1508757cc5a2d7f056bbcac822` |
 | `lib/client.js` | `c1fb688c119a3823b4b421a6588eb04966fe17834ecd9b75c14e964d18cf8a85` |
-| `dist/dsh-any-rollback-0.19.1-any.2.tgz` | `1de8212766a08971a399e8f76d2be6741d5a63935a781075953631d4fef6f0a5` |
+| `dist/dsh-any-rollback-0.19.1-any.3.tgz` | `1de8212766a08971a399e8f76d2be6741d5a63935a781075953631d4fef6f0a5` |
 
 **Restart DSH** after installing (the host half loads once per process). Then run one turn and confirm a
 manifest appeared under `~/.dsh/rewind-snapshots/<sessionId>/artifacts/manifests/` and the ↶ buttons show up.

@@ -109,7 +109,7 @@
 
 ```json
 "dependencies": {
-  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.2/dsh-any-rollback-0.19.1-any.2.tgz"
+  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.3/dsh-any-rollback-0.19.1-any.3.tgz"
 }
 ```
 
@@ -126,7 +126,7 @@ $pnpm = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnp
 ### 从源码目录安装
 
 ```json
-"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1-any.2.tgz"
+"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1-any.3.tgz"
 ```
 
 ## 环境要求
@@ -148,9 +148,9 @@ node scripts\verify.mjs "<包目录>"        # 检查任意解包目录
 | 文件 | SHA-256 |
 | --- | --- |
 | `lib/index.js` | `7a724f18eadc9adc5d46e8eb28a31d8e39e5a3ceb82b6201810683abc2b64f26` |
-| `lib/artifact-track.js` | `cf81d7f58f604ae5c9d8102c51a00a815321e56927088c951e7d1f599089d88f` |
+| `lib/artifact-track.js` | `f1b85503f74763eb2bfec82ced93ba39f1d9ac1508757cc5a2d7f056bbcac822` |
 | `lib/client.js` | `c1fb688c119a3823b4b421a6588eb04966fe17834ecd9b75c14e964d18cf8a85` |
-| `dist/dsh-any-rollback-0.19.1-any.2.tgz` | `1de8212766a08971a399e8f76d2be6741d5a63935a781075953631d4fef6f0a5` |
+| `dist/dsh-any-rollback-0.19.1-any.3.tgz` | `1de8212766a08971a399e8f76d2be6741d5a63935a781075953631d4fef6f0a5` |
 
 装完**重启 DSH** 才会生效（插件宿主侧每个进程只加载一次）。重启后跑一个回合，
 确认 `~\.dsh\rewind-snapshots\<会话ID>\artifacts\manifests\` 下出现清单文件，且消息旁出现 ↶ 按钮。
