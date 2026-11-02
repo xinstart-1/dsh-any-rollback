@@ -1,4 +1,4 @@
-# dsh-rollback
+# dsh-any-rollback
 
 > **DSH 对话回退插件。** 回退到任意一条历史消息，并把工作区文件一起还原 ——
 > 包括渲染、ffmpeg、构建脚本这类**命令产出的文件**，不只是编辑器里改过的源码。
@@ -11,7 +11,7 @@
 用 AI 干活时，一个回合经常同时留下两类痕迹：对话里的消息，和工作区里的文件。想「回到那一步重来」时，
 两者都得回到当时的样子才对 —— 只退对话会留下一地改了半截的文件，只退文件则对话还停在错误的上下文里。
 
-`dsh-rollback` 把这两件事一起做：点消息上的 ↶，对话回到那条消息之前，文件也回到那一刻的状态。
+`dsh-any-rollback` 把这两件事一起做：点消息上的 ↶，对话回到那条消息之前，文件也回到那一刻的状态。
 
 | 场景 | 没有本插件 | 使用本插件 |
 | --- | --- | --- |
@@ -109,7 +109,7 @@
 
 ```json
 "dependencies": {
-  "dsh-rollback": "https://github.com/xinstart-1/dsh-rollback/releases/download/v0.19.1-rb.2/dsh-rollback-0.19.1.tgz"
+  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.1/dsh-any-rollback-0.19.1.tgz"
 }
 ```
 
@@ -121,12 +121,12 @@ $pnpm = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnp
 & $node $pnpm install --dir "$env:USERPROFILE\.dsh\profiles\<profile>" --prefer-offline
 ```
 
-还要确认 `dsh-rollback` 已加入该 profile 的 `dsh.profile.bundles` 数组 —— **这个数组才是真正加载插件的开关**。
+还要确认 `dsh-any-rollback` 已加入该 profile 的 `dsh.profile.bundles` 数组 —— **这个数组才是真正加载插件的开关**。
 
 ### 从源码目录安装
 
 ```json
-"dsh-rollback": "file:C:/path/to/dsh-rollback/dist/dsh-rollback-0.19.1.tgz"
+"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1.tgz"
 ```
 
 ## 环境要求
@@ -148,16 +148,16 @@ node scripts\verify.mjs "<包目录>"        # 检查任意解包目录
 | 文件 | SHA-256 |
 | --- | --- |
 | `lib/index.js` | `cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3` |
-| `lib/artifact-track.js` | `e3d909c91f25ee144d668b2841278d14fd9dfab4d625596d7fe808622a29f1e6` |
-| `lib/client.js` | `5d29b0fa28577bcf8d2c0425029016f18a63efcdfbe138ac0b6d07f21c766461` |
-| `dist/dsh-rollback-0.19.1.tgz` | `7a18df38e9323aec964e49b5720a08933ddb921ba12939fec64e9b13b00bb28f` |
+| `lib/artifact-track.js` | `904c08ad92e298dcb700094f37885299e968c6216c7afe1e658fe28c7bb249b5` |
+| `lib/client.js` | `c1fb688c119a3823b4b421a6588eb04966fe17834ecd9b75c14e964d18cf8a85` |
+| `dist/dsh-any-rollback-0.19.1.tgz` | `e1e180684389ed9ac63fb5708e60c346f4fdc3e7b8eeb5f28e56d7a6a17b37b3` |
 
 装完**重启 DSH** 才会生效（插件宿主侧每个进程只加载一次）。重启后跑一个回合，
 确认 `~\.dsh\rewind-snapshots\<会话ID>\artifacts\manifests\` 下出现清单文件，且消息旁出现 ↶ 按钮。
 
 ## 卸载
 
-从 profile 的 `dependencies` 和 `dsh.profile.bundles` 里删掉 `dsh-rollback`，重新安装依赖即可。
+从 profile 的 `dependencies` 和 `dsh.profile.bundles` 里删掉 `dsh-any-rollback`，重新安装依赖即可。
 备份数据不会自动删除；要彻底清理，手动删除 `~/.dsh/rewind-snapshots/`。
 
 ## 设计取舍

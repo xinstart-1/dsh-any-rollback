@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * verify.mjs — 校验已安装（或已解包）的 dsh-rollback 是否为发布版本。
+ * verify.mjs — 校验已安装（或已解包）的 dsh-any-rollback 是否为发布版本。
  *
  * 用法:
  *   node scripts/verify.mjs                       # 默认检查桌面 profile 的安装
@@ -14,13 +14,13 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 /** 本仓库发布的版本与各文件摘要。 */
-const PACKAGE_NAME = 'dsh-rollback'
+const PACKAGE_NAME = 'dsh-any-rollback'
 const EXPECTED = {
   version: '0.19.1',
   files: {
     'lib/index.js': 'cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3',
-    'lib/artifact-track.js': 'e3d909c91f25ee144d668b2841278d14fd9dfab4d625596d7fe808622a29f1e6',
-    'lib/client.js': '5d29b0fa28577bcf8d2c0425029016f18a63efcdfbe138ac0b6d07f21c766461',
+    'lib/artifact-track.js': '904c08ad92e298dcb700094f37885299e968c6216c7afe1e658fe28c7bb249b5',
+    'lib/client.js': 'c1fb688c119a3823b4b421a6588eb04966fe17834ecd9b75c14e964d18cf8a85',
   },
 }
 

@@ -1,7 +1,7 @@
-# dsh-rollback bundle patch: one row, dual-face (node half = the package's
+# dsh-any-rollback bundle patch: one row, dual-face (node half = the package's
 # default export, browser half = ./client via the `dsh.client` declaration).
 # The row name MUST equal the package name — the client-modules node half
 # resolves `require.resolve('<row-name>/package.json')` to find the package.
 - insert:
-    - id: dsh-rollback
-      name: 'dsh-rollback'
+    - id: dsh-any-rollback
+      name: 'dsh-any-rollback'

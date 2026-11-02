@@ -1,4 +1,4 @@
-# dsh-rollback
+# dsh-any-rollback
 
 > **In-window conversation rewind for DSH.** Rewind to any earlier user message and restore the workspace
 > with it — including files produced by commands (`node render.mjs`, `ffmpeg`, build and data scripts),
@@ -14,7 +14,7 @@ A turn of agent work usually leaves two kinds of traces: messages in the convers
 conversation alone leaves half-edited files behind, and restoring files alone leaves the model in the
 wrong context.
 
-`dsh-rollback` does both: click ↶ on a message and the conversation returns to just before it, with the
+`dsh-any-rollback` does both: click ↶ on a message and the conversation returns to just before it, with the
 workspace restored to how it looked at that moment.
 
 | Situation | Without this plugin | With it |
@@ -118,7 +118,7 @@ In the profile's `package.json`:
 
 ```json
 "dependencies": {
-  "dsh-rollback": "https://github.com/xinstart-1/dsh-rollback/releases/download/v0.19.1-rb.2/dsh-rollback-0.19.1.tgz"
+  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.1/dsh-any-rollback-0.19.1.tgz"
 }
 ```
 
@@ -130,13 +130,13 @@ $pnpm = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnp
 & $node $pnpm install --dir "$env:USERPROFILE\.dsh\profiles\<profile>" --prefer-offline
 ```
 
-Also make sure `dsh-rollback` is listed in that profile's `dsh.profile.bundles` array — that array is what
+Also make sure `dsh-any-rollback` is listed in that profile's `dsh.profile.bundles` array — that array is what
 actually loads the plugin.
 
 ### From a local clone
 
 ```json
-"dsh-rollback": "file:C:/path/to/dsh-rollback/dist/dsh-rollback-0.19.1.tgz"
+"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1.tgz"
 ```
 
 ## Requirements
@@ -150,7 +150,7 @@ actually loads the plugin.
 
 ```powershell
 node scripts\verify.mjs                                            # current desktop profile
-node scripts\verify.mjs "C:\path\to\node_modules\dsh-rollback"      # any unpacked dir
+node scripts\verify.mjs "C:\path\to\node_modules\dsh-any-rollback"      # any unpacked dir
 ```
 
 Expected digests (SHA-256):
@@ -158,16 +158,16 @@ Expected digests (SHA-256):
 | File | SHA-256 |
 | --- | --- |
 | `lib/index.js` | `cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3` |
-| `lib/artifact-track.js` | `e3d909c91f25ee144d668b2841278d14fd9dfab4d625596d7fe808622a29f1e6` |
-| `lib/client.js` | `5d29b0fa28577bcf8d2c0425029016f18a63efcdfbe138ac0b6d07f21c766461` |
-| `dist/dsh-rollback-0.19.1.tgz` | `7a18df38e9323aec964e49b5720a08933ddb921ba12939fec64e9b13b00bb28f` |
+| `lib/artifact-track.js` | `904c08ad92e298dcb700094f37885299e968c6216c7afe1e658fe28c7bb249b5` |
+| `lib/client.js` | `c1fb688c119a3823b4b421a6588eb04966fe17834ecd9b75c14e964d18cf8a85` |
+| `dist/dsh-any-rollback-0.19.1.tgz` | `e1e180684389ed9ac63fb5708e60c346f4fdc3e7b8eeb5f28e56d7a6a17b37b3` |
 
 **Restart DSH** after installing (the host half loads once per process). Then run one turn and confirm a
 manifest appeared under `~/.dsh/rewind-snapshots/<sessionId>/artifacts/manifests/` and the ↶ buttons show up.
 
 ## Uninstall
 
-Remove `dsh-rollback` from the profile's `dependencies` and `dsh.profile.bundles`, then reinstall. Backup
+Remove `dsh-any-rollback` from the profile's `dependencies` and `dsh.profile.bundles`, then reinstall. Backup
 data is not deleted automatically — remove `~/.dsh/rewind-snapshots/` to wipe it.
 
 ## Design decisions

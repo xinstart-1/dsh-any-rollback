@@ -1,8 +1,8 @@
 <#
-  refresh.ps1 — 把已安装的 dsh-rollback 更新为本仓库的当前文件。
+  refresh.ps1 — 把已安装的 dsh-any-rollback 更新为本仓库的当前文件。
 
   DSH 用 `require.resolve('<包名>/package.json')` 定位客户端半边，所以 node_modules
-  下的目录名必须等于包名。本脚本只用于刷新一个已经叫 dsh-rollback 的安装副本，
+  下的目录名必须等于包名。本脚本只用于刷新一个已经叫 dsh-any-rollback 的安装副本，
   例如手工改动过、或想从本仓库直接同步时。
 
   用法:
@@ -19,11 +19,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$pkgDir = Join-Path $Target 'dsh-rollback'
+$pkgDir = Join-Path $Target 'dsh-any-rollback'
 $manifest = Join-Path $pkgDir 'package.json'
 
 if (-not (Test-Path $manifest)) {
-  Write-Host "目标下没有 dsh-rollback: $Target" -ForegroundColor Red
+  Write-Host "目标下没有 dsh-any-rollback: $Target" -ForegroundColor Red
   Write-Host '请按 README「安装」一节用 Release tarball 或本地目录安装。' -ForegroundColor Yellow
   exit 2
 }

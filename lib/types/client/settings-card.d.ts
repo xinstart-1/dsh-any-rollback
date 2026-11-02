@@ -31,7 +31,7 @@ export declare const CARD_LOCALE_NS = "rewind";
  * The plugin entry whose form this is: the bundle's package name, which is the
  * profile entry id the host addresses the configuration by.
  */
-export declare const SETTINGS_ENTRY_ID = "dsh-rollback";
+export declare const SETTINGS_ENTRY_ID = "dsh-any-rollback";
 /** The default max age; an empty numeric draft means "use this". */
 export declare const DEFAULT_MAX_AGE_DAYS = 30;
 /** The editable knobs, exactly as the entry's configuration document names them. */
