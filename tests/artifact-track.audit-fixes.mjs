@@ -93,8 +93,9 @@ console.log('用例 6：还原流程的临时文件不进清单，遗留 tmp 被
   await tracker.onTurnEnd('s', 20)
 
   // 模拟上次还原失败留下的 tmp
-  await writeFile(join(cwd, 'f.txt.rewind-123.tmp'), 'leftover')
-  await writeFile(join(cwd, 'keep.rewind-456.tmp'), 'leftover2')
+  // 只清理本进程 pid 且同名原始文件存在的残留（旧实现按模式误删用户文件）
+  await writeFile(join(cwd, 'f.txt.rewind-' + process.pid + '.tmp'), 'leftover')
+  await writeFile(join(cwd, 'keep.rewind-456.tmp'), 'user-owned-not-ours')
 
   // tmp 不得进入边界清单
   await tracker.onTurnEnd('s', 30)
@@ -111,7 +112,8 @@ console.log('用例 6：还原流程的临时文件不进清单，遗留 tmp 被
   // 还原后遗留 tmp 被清扫；落点状态是清单 10（f.txt = v1）
   await tracker.restore('s', 20, 999)
   const leftovers = (await readdir(cwd)).filter((n) => n.includes('.rewind-'))
-  check(leftovers.length === 0, '遗留 tmp 被清理', leftovers.join(', '))
+  check(!leftovers.includes('f.txt.rewind-' + process.pid + '.tmp'), '本进程残留被清理', leftovers.join(', '))
+  check(leftovers.includes('keep.rewind-456.tmp'), '非本进程命名的文件不被误删')
   check((await readFile(join(cwd, 'f.txt'), 'utf8')) === 'v1', '还原为落点状态的内容（v1）')
   await done(base)
 }
