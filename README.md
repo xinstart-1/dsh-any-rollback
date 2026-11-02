@@ -83,7 +83,7 @@
 | `artifactTrackingEnabled` | `true` | 是否追踪命令产出的文件 |
 | `artifactMaxFileBytes` | `67108864`（64 MiB） | 命令产物单文件缓存上限，独立于 `maxFileBytes` |
 | `artifactBaselineContent` | `false` | 是否缓存首次观测到的内容（更占空间，能还原插件未见过历史的大文件） |
-| `artifactExclude` | `node_modules,.git,dist,build,out,.next,.nuxt,.cache,.turbo,coverage,__pycache__,venv,.venv,target` | 追踪时跳过的目录 |
+| `artifactExclude` | `node_modules,dist,build,out,coverage,__pycache__,venv,.venv,target` | 追踪时跳过的目录 |
 | `artifactKeepManifests` | `20` | 每个会话保留的清单份数 |
 | `autoCleanupEnabled` | `true` | 自动清理开关 |
 | `autoCleanupMaxAgeDays` | `30` | 备份闲置多少天后可清理 |
@@ -109,7 +109,7 @@
 
 ```json
 "dependencies": {
-  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.1/dsh-any-rollback-0.19.1.tgz"
+  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.2/dsh-any-rollback-0.19.1-any.2.tgz"
 }
 ```
 
@@ -126,7 +126,7 @@ $pnpm = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnp
 ### 从源码目录安装
 
 ```json
-"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1.tgz"
+"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1-any.2.tgz"
 ```
 
 ## 环境要求
@@ -147,10 +147,10 @@ node scripts\verify.mjs "<包目录>"        # 检查任意解包目录
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `lib/index.js` | `cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3` |
-| `lib/artifact-track.js` | `904c08ad92e298dcb700094f37885299e968c6216c7afe1e658fe28c7bb249b5` |
+| `lib/index.js` | `7a724f18eadc9adc5d46e8eb28a31d8e39e5a3ceb82b6201810683abc2b64f26` |
+| `lib/artifact-track.js` | `cf81d7f58f604ae5c9d8102c51a00a815321e56927088c951e7d1f599089d88f` |
 | `lib/client.js` | `c1fb688c119a3823b4b421a6588eb04966fe17834ecd9b75c14e964d18cf8a85` |
-| `dist/dsh-any-rollback-0.19.1.tgz` | `e1e180684389ed9ac63fb5708e60c346f4fdc3e7b8eeb5f28e56d7a6a17b37b3` |
+| `dist/dsh-any-rollback-0.19.1-any.2.tgz` | `1de8212766a08971a399e8f76d2be6741d5a63935a781075953631d4fef6f0a5` |
 
 装完**重启 DSH** 才会生效（插件宿主侧每个进程只加载一次）。重启后跑一个回合，
 确认 `~\.dsh\rewind-snapshots\<会话ID>\artifacts\manifests\` 下出现清单文件，且消息旁出现 ↶ 按钮。
@@ -167,40 +167,45 @@ node scripts\verify.mjs "<包目录>"        # 检查任意解包目录
 - **会话日志只追加。** 回退只改变对话视图，历史记录永远完整可查。
 - **备份目录独立于工作区。** 不会污染项目，也不会被项目里的清理脚本误删。
 
-## 已知限制
+## 已修复的问题
 
-以下是当前版本实测确认的边界，使用前请知悉。
+以下四处在早期版本中确实存在，本版已修复，并各有回归测试守着（`tests/artifact-track.regression.mjs`）。
 
-### 1. 超过大小上限、且内容改过的文件，回退时会被移出工作区
+### 1. 超上限且内容改过的文件会被移出工作区 → 已修复
 
-单文件超过上限（`maxFileBytes` 或 `artifactMaxFileBytes`）时，内容不会被缓存。此时若文件内容**变化过**，
-回退无法判断它「当时是什么」，当前实现会按「新建产物」处理，把它**移入隔离区** ——
+单文件超过上限（`maxFileBytes` / `artifactMaxFileBytes`）时内容不被缓存。早期版本遇到「目标时刻已存在、
+但内容没备份且后来改过」的文件，会按「新建产物」处理并移入隔离区，看起来像文件被删了。
 
-- 文件不会丢失（在 `quarantine/` 下，`index.json` 记录原路径，可找回）；
-- 但在回退那一刻它会从工作区消失，看起来像被删了；
-- 期望的行为应该是「跳过并提示」，这一点待修。
+现在改为**跳过并保持原样**，回退结果里会写明「N 个文件保持原样（目标时刻没有内容备份）」。
+目标时刻**确实没有**该文件时，仍然会移入隔离区 —— 这是正确行为，未改变。
 
-规避：把常用的大文件目录加进 `artifactExclude`，或调高 `artifactMaxFileBytes`。
+### 2. 1.5 秒内的同尺寸改写可能漏记 → 已修复
 
-### 2. 1.5 秒内发生的「同尺寸」修改可能被漏记
+早期用「大小 + mtime，mtime 带 1500 ms 容差」判断变化。若文件在边界之后**大小不变、且在容差窗口内被改写**，
+会沿用旧摘要，回退还原成更早的版本。
 
-判断文件是否变化用的是 `大小 + mtime`，且 mtime 有 1500 ms 容差。如果一个文件在上一份清单之后
-**大小不变、且在容差窗口内被改写**，插件会沿用旧的内容摘要，导致回退还原成更早的版本。
-脚本连续产出同尺寸文件（固定分辨率的帧、定长记录）最容易触发。
+现在改为 **mtime 精确比对**：只有 mtime 完全相同才复用旧摘要，否则重新计算内容哈希。
 
-### 3. 内容缓存没有回收机制
+### 3. 内容缓存从不回收 → 已修复
 
-清单按 `artifactKeepManifests` 裁剪，但**按内容缓存的文件从不删除**。会话越长、产物变化越多，
-`artifacts/blobs/` 占用持续增长，只有删除整个会话目录才会释放。
+早期只裁剪清单，`artifacts/blobs/` 里的内容副本永不删除，会话越长占用越大。
 
-### 4. 点目录不参与追踪
+现在每次裁剪清单后执行一次**可达性回收**：清掉不再被任何存活清单引用的 blob，
+以及写入中断留下的 `.tmp-*` 临时文件。
 
-扫描时跳过所有以 `.` 开头的目录。产物若落在 `.output/`、`.cache/` 这类位置，回退不会处理。
+### 4. 点目录不参与追踪 → 已修复
 
-### 5. 回退依赖已有备份
+早期扫描跳过所有 `.` 开头的目录，产物落在 `.output/`、`.cache/` 里就不会被追踪。
 
-插件启用前的历史、以及关闭备份期间产生的改动没有记录，无法还原。会话被压缩（compact）之后，
-早于压缩点的消息也不再出现在回退列表中。
+现在默认**追踪点目录**，只固定跳过 VCS 与工具状态目录（`.git`、`.hg`、`.svn`、`.dsh`、`.dsh-file-attachment`）。
+依赖与构建目录（`node_modules`、`dist`、`build`、`out` 等）仍按默认排除；
+需要的话可以用 `artifactExclude` 自行增删。
+
+## 仍然适用的边界
+
+- 回退依赖已有备份。插件启用前的历史、以及关闭备份期间产生的改动没有记录，无法还原。
+- 会话被压缩（compact）之后，早于压缩点的消息不再出现在回退列表中。
+- 超过大小上限的文件不缓存内容，因此跨上限的那段改动无法还原（现在会明确提示，不再动文件）。
 
 ## 仓库结构
 

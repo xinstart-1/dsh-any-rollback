@@ -91,7 +91,7 @@ editing is needed.
 | `artifactTrackingEnabled` | `true` | track command-produced files |
 | `artifactMaxFileBytes` | `67108864` (64 MiB) | per-file cache cap for artifacts, independent of `maxFileBytes` |
 | `artifactBaselineContent` | `false` | also cache the first observation (costlier; restores large pre-existing content) |
-| `artifactExclude` | `node_modules,.git,dist,build,out,.next,.nuxt,.cache,.turbo,coverage,__pycache__,venv,.venv,target` | subtrees skipped while tracking |
+| `artifactExclude` | `node_modules,dist,build,out,coverage,__pycache__,venv,.venv,target` | subtrees skipped while tracking |
 | `artifactKeepManifests` | `20` | manifests kept per session |
 | `autoCleanupEnabled` | `true` | automatic cleanup switch |
 | `autoCleanupMaxAgeDays` | `30` | idle days before a backup may be swept |
@@ -118,7 +118,7 @@ In the profile's `package.json`:
 
 ```json
 "dependencies": {
-  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.1/dsh-any-rollback-0.19.1.tgz"
+  "dsh-any-rollback": "https://github.com/xinstart-1/dsh-any-rollback/releases/download/v0.19.1-any.2/dsh-any-rollback-0.19.1-any.2.tgz"
 }
 ```
 
@@ -136,7 +136,7 @@ actually loads the plugin.
 ### From a local clone
 
 ```json
-"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1.tgz"
+"dsh-any-rollback": "file:C:/path/to/dsh-any-rollback/dist/dsh-any-rollback-0.19.1-any.2.tgz"
 ```
 
 ## Requirements
@@ -157,10 +157,10 @@ Expected digests (SHA-256):
 
 | File | SHA-256 |
 | --- | --- |
-| `lib/index.js` | `cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3` |
-| `lib/artifact-track.js` | `904c08ad92e298dcb700094f37885299e968c6216c7afe1e658fe28c7bb249b5` |
+| `lib/index.js` | `7a724f18eadc9adc5d46e8eb28a31d8e39e5a3ceb82b6201810683abc2b64f26` |
+| `lib/artifact-track.js` | `cf81d7f58f604ae5c9d8102c51a00a815321e56927088c951e7d1f599089d88f` |
 | `lib/client.js` | `c1fb688c119a3823b4b421a6588eb04966fe17834ecd9b75c14e964d18cf8a85` |
-| `dist/dsh-any-rollback-0.19.1.tgz` | `e1e180684389ed9ac63fb5708e60c346f4fdc3e7b8eeb5f28e56d7a6a17b37b3` |
+| `dist/dsh-any-rollback-0.19.1-any.2.tgz` | `1de8212766a08971a399e8f76d2be6741d5a63935a781075953631d4fef6f0a5` |
 
 **Restart DSH** after installing (the host half loads once per process). Then run one turn and confirm a
 manifest appeared under `~/.dsh/rewind-snapshots/<sessionId>/artifacts/manifests/` and the ↶ buttons show up.
@@ -177,44 +177,50 @@ data is not deleted automatically — remove `~/.dsh/rewind-snapshots/` to wipe 
 - **The session log is append-only.** A rewind changes the conversation view; history stays complete.
 - **The backup root is separate from the workspace.** It cannot be clobbered by project clean scripts.
 
-## Known limits
+## Fixed in this version
 
-Each of these is confirmed by test against the shipped build.
+All four behaviours below existed in earlier builds. They are fixed here, and each has a regression test in
+`tests/artifact-track.regression.mjs`.
 
-### 1. An over-cap file that changed gets moved out of the worktree
+### 1. An over-cap file that changed was moved out of the worktree → fixed
 
-Content is not cached for a file above the cap (`maxFileBytes` / `artifactMaxFileBytes`). If such a file then
-**changed**, a rewind cannot know what it held at the target state and currently treats it as a newly created
-artifact — it **moves the file to quarantine**:
+Content is not cached for a file above the cap (`maxFileBytes` / `artifactMaxFileBytes`). An earlier build
+treated such a file as "newly created" when it had changed, so a rewind moved a file that legitimately
+existed at the target state into quarantine — it looked deleted.
 
-- nothing is lost (it sits under `quarantine/`, with its original path in `index.json`);
-- but it disappears from the worktree during the rewind, which reads like a deletion;
-- the intended behaviour is to skip it and say so — this needs fixing.
+Now it is **skipped and left in place**, and the rewind reports "N file(s) left as-is (no content backup for
+that point)". A file that genuinely did not exist at the target state is still quarantined; that is correct
+and unchanged.
 
-Workaround: add large-file directories to `artifactExclude`, or raise `artifactMaxFileBytes`.
+### 2. A same-size rewrite within 1.5 s could be missed → fixed
 
-### 2. A same-size change within 1.5 s can be missed
+Change detection used `size + mtime` with a 1500 ms mtime tolerance, so a same-size rewrite right after a
+boundary reused the previous digest and a rewind restored content older than the target state.
 
-Change detection uses `size + mtime`, and mtime carries a 1500 ms tolerance. If a file is rewritten with
-**identical size inside that window**, the plugin keeps the previous digest and a rewind restores an older
-version. Scripts emitting same-size files (fixed-resolution frames, fixed-length records) hit this most.
+Now mtime is compared **exactly**: the previous digest is reused only when mtime is identical, otherwise the
+content is hashed again.
 
-### 3. The content cache is never reclaimed
+### 3. The content cache was never reclaimed → fixed
 
-Manifests are pruned to `artifactKeepManifests`, but **cached content is never deleted**. The longer a
-session runs and the more its artifacts change, the more `artifacts/blobs/` grows; only removing the whole
-session directory frees it.
+Only manifests were pruned, so every cached copy under `artifacts/blobs/` stayed forever.
 
-### 4. Dot-directories are not tracked
+Each prune now runs a **reachability sweep**: blobs no longer referenced by any live manifest are removed,
+along with `.tmp-*` files left by an interrupted write.
 
-The walk skips every directory starting with `.`. Artifacts written under `.output/`, `.cache/` and the like
-are not handled by a rewind.
+### 4. Dot-directories were not tracked → fixed
 
-### 5. Rewinding needs existing backups
+The walk used to skip every directory starting with `.`, so artifacts under `.output/` or `.cache/` were
+invisible. Dot-directories are now tracked by default, with only VCS/tooling state skipped
+(`.git`, `.hg`, `.svn`, `.dsh`, `.dsh-file-attachment`). Dependency and build directories (`node_modules`,
+`dist`, `build`, `out`, …) stay excluded by default; `artifactExclude` still overrides the list.
 
-History from before the plugin was installed, or changes made while backups were off, has no record and
-cannot be restored. After a conversation compaction, messages earlier than the compaction point drop out of
-the rewind list.
+## Remaining boundaries
+
+- Rewinding needs existing backups. History from before the plugin was installed, or changes made while
+  backups were off, has no record and cannot be restored.
+- After a conversation compaction, messages earlier than the compaction point drop out of the rewind list.
+- Files above the size cap are not cached, so changes that cross the cap cannot be restored (the rewind now
+  says so explicitly and leaves the file alone).
 
 ## Repository layout
 
