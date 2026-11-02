@@ -72,7 +72,7 @@ In `~/.dsh/profiles/<profile>/package.json`:
 
 ```json
 "dependencies": {
-  "dsh-rollback": "https://github.com/<owner>/dsh-rollback/releases/download/v0.19.1-rb.1/dsh-rollback-0.19.1.tgz"
+  "dsh-rollback": "https://github.com/xinstart-1/dsh-rollback/releases/download/v0.19.1-rb.1/dsh-rollback-0.19.1.tgz"
 }
 ```
 
