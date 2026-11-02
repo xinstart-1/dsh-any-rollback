@@ -179,17 +179,49 @@ data is not deleted automatically — remove `~/.dsh/rewind-snapshots/` to wipe 
 
 ## Known limits
 
-- Rewinding needs existing backups. History from before the plugin was installed, or changes made while
-  backups were off, has no record and cannot be restored.
-- A file above the backup cap gets no new backup; a rewind skips it and says so.
-- After a conversation compaction, messages earlier than the compaction point drop out of the rewind list.
+Each of these is confirmed by test against the shipped build.
+
+### 1. An over-cap file that changed gets moved out of the worktree
+
+Content is not cached for a file above the cap (`maxFileBytes` / `artifactMaxFileBytes`). If such a file then
+**changed**, a rewind cannot know what it held at the target state and currently treats it as a newly created
+artifact — it **moves the file to quarantine**:
+
+- nothing is lost (it sits under `quarantine/`, with its original path in `index.json`);
+- but it disappears from the worktree during the rewind, which reads like a deletion;
+- the intended behaviour is to skip it and say so — this needs fixing.
+
+Workaround: add large-file directories to `artifactExclude`, or raise `artifactMaxFileBytes`.
+
+### 2. A same-size change within 1.5 s can be missed
+
+Change detection uses `size + mtime`, and mtime carries a 1500 ms tolerance. If a file is rewritten with
+**identical size inside that window**, the plugin keeps the previous digest and a rewind restores an older
+version. Scripts emitting same-size files (fixed-resolution frames, fixed-length records) hit this most.
+
+### 3. The content cache is never reclaimed
+
+Manifests are pruned to `artifactKeepManifests`, but **cached content is never deleted**. The longer a
+session runs and the more its artifacts change, the more `artifacts/blobs/` grows; only removing the whole
+session directory frees it.
+
+### 4. Dot-directories are not tracked
+
+The walk skips every directory starting with `.`. Artifacts written under `.output/`, `.cache/` and the like
+are not handled by a rewind.
+
+### 5. Rewinding needs existing backups
+
+History from before the plugin was installed, or changes made while backups were off, has no record and
+cannot be restored. After a conversation compaction, messages earlier than the compaction point drop out of
+the rewind list.
 
 ## Repository layout
 
 ```
 dist/     installable tarball (release asset)
-package/  the same package unpacked, for review
-lib/      host and client entry points (build output)
+lib/      host and client entry points
+locale/   interface copy
 scripts/  verify.mjs (integrity check), refresh.ps1 (re-sync an installed copy)
 ```
 
