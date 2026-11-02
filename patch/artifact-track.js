@@ -1,4 +1,4 @@
-// dsh-rewind-plugin 补丁模块：命令产物追踪（边界快照 + 内容缓存 + 隔离区回滚）
+// dsh-rollback 补丁模块：命令产物追踪（边界快照 + 内容缓存 + 隔离区回滚）
 //
 // 背景：官方 dsh-rewind-plugin 只追踪 write/edit 两个写类工具动过的文件
 // （TRACKED_TOOLS = {write, edit}），并且单文件上限默认 8MB。渲染脚本

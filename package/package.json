@@ -1,5 +1,5 @@
 {
-  "name": "dsh-rewind-plugin",
+  "name": "dsh-rollback",
   "version": "0.19.1",
   "description": "In-window conversation rewind with workspace file restore · 同窗口内对话回退并可还原工作区文件",
   "icon": "./assets/icon.svg",

@@ -1,7 +1,8 @@
-# dsh-rewind-plugin · artifact patch (0.19.1)
+# dsh-rollback · artifact patch for dsh-rewind-plugin 0.19.1
 
-> Unofficial repack of [`dsh-rewind-plugin`](https://github.com/SiriLee/dsh-rewind) **0.19.1** with an
-> artifact-tracking patch, for DSH harness on the **0.2.1 line**.
+> `dsh-rollback` is an unofficial repack of [`dsh-rewind-plugin`](https://github.com/SiriLee/dsh-rewind)
+> **0.19.1** with an artifact-tracking patch, for DSH harness on the **0.2.1 line**.
+> It is a separate package (not a replacement under the upstream name), so both can be installed side by side.
 > Not affiliated with the upstream author. MIT, same as upstream — see [License](#license).
 
 ## Why this exists
@@ -71,7 +72,7 @@ In `~/.dsh/profiles/<profile>/package.json`:
 
 ```json
 "dependencies": {
-  "dsh-rewind-plugin": "https://github.com/<owner>/<repo>/releases/download/v0.19.1-artifact-patch.1/dsh-rewind-plugin-0.19.1-artifact-patched.tgz"
+  "dsh-rollback": "https://github.com/<owner>/dsh-rollback/releases/download/v0.19.1-rb.1/dsh-rollback-0.19.1.tgz"
 }
 ```
 
@@ -83,27 +84,28 @@ $pnpm = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnp
 & $node $pnpm install --dir "$env:USERPROFILE\.dsh\profiles\<profile>" --prefer-offline
 ```
 
-Make sure `dsh-rewind-plugin` is also listed in that profile's `dsh.profile.bundles` array — that array is
-what actually loads the plugin.
+Make sure `dsh-rollback` is also listed in that profile's `dsh.profile.bundles` array — that array is what
+actually loads the plugin. Remove `dsh-rewind-plugin` from both places if it is still there: a row and a
+dependency can stay mounted together, but two copies of the same rewind UI would both render a ↶ button.
 
 ### B. From a clone
 
 ```json
-"dsh-rewind-plugin": "file:C:/path/to/dsh-rewind-artifact-patch/dist/dsh-rewind-plugin-0.19.1-artifact-patched.tgz"
+"dsh-rollback": "file:C:/path/to/dsh-rollback/dist/dsh-rollback-0.19.1.tgz"
 ```
 
-### C. Patch a pristine `npm i dsh-rewind-plugin@0.19.1` install in place
+### C. Patch a pristine upstream `dsh-rewind-plugin@0.19.1` install
 
-```powershell
-npm i dsh-rewind-plugin@0.19.1        # in the profile, or however you normally install it
-.\scripts\apply-patch.ps1 -Target "C:\Users\<you>\.dsh\profiles\<profile>\node_modules"
-```
+Not supported after the rename. The harness resolves the client half with
+`require.resolve('<package-name>/package.json')`, so the directory under `node_modules` must be named after
+the package; a package called `dsh-rollback` cannot live in a `dsh-rewind-plugin` directory. Install from the
+tarball (A) or a clone (B), and use `scripts/refresh.ps1` to re-sync an existing `dsh-rollback` copy.
 
 ## Verify
 
 ```powershell
 node scripts\verify.mjs                                            # default: desktop profile
-node scripts\verify.mjs "C:\path\to\node_modules\dsh-rewind-plugin"
+node scripts\verify.mjs "C:\path\to\node_modules\dsh-rollback"
 ```
 
 Expected digests (SHA-256):
@@ -111,9 +113,9 @@ Expected digests (SHA-256):
 | File | SHA-256 |
 | --- | --- |
 | `lib/index.js` | `cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3` |
-| `lib/artifact-track.js` | `4092da093da213ae7161381d276d75df7c7fc6c5ea46ac0e6f7c80a628e8239a` |
-| `lib/client.js` | `654e6e33f36d5c9ad998e3bb3b1720f1ab24886ab9271a7d02a5bd526e7fe313` |
-| `dist/dsh-rewind-plugin-0.19.1-artifact-patched.tgz` | `0bd4ae10df22a474d90d649ced412c6c470d051c7be18b8bcbecede0b31d1de8` |
+| `lib/artifact-track.js` | `03e8ddab92765bf8a53522495b0b657235c327cb94b01d88ff7fe46bd9ba7b6c` |
+| `lib/client.js` | `5d29b0fa28577bcf8d2c0425029016f18a63efcdfbe138ac0b6d07f21c766461` |
+| `dist/dsh-rollback-0.19.1.tgz` | `0e0bd8f9ad4a79aeb382b15fa29e8dac27b95552b6d17249dea5c931e74cb46f` |
 
 Runtime proof after a restart: run one turn, then check that
 `~/.dsh/rewind-snapshots/<sessionId>/artifacts/manifests/` exists. The ↶ button should be back too.
@@ -122,30 +124,40 @@ Runtime proof after a restart: run one turn, then check that
 
 | Goal | Do |
 | --- | --- |
-| back to plain 0.19.1 | dependency `"dsh-rewind-plugin": "0.19.1"` (registry), then reinstall |
+| back to the plain upstream plugin | dependency `"dsh-rewind-plugin": "0.19.1"` (registry) or `"0.20.0-alpha.1"` once the harness allows it, drop `dsh-rollback`, then reinstall |
 | keep snapshots, drop artifact data only | delete `<snapshotDir>/<sessionId>/artifacts/` |
-| move to upstream 0.20 when the harness allows it | dependency `"dsh-rewind-plugin": "0.20.0-alpha.1"` — the patch is **not** in upstream |
+| move to upstream 0.20 when the harness allows it | this patch is **not** in upstream; 0.20.0 also has no artifact tracking |
 
 ## What differs from the published 0.19.1
 
 | Path | Change |
 | --- | --- |
-| `lib/index.js` | patched: `ArtifactTracker` import, 5 config keys, `turn/end` hook, `previewImpact` merge, `executeRewind` restore/quarantine, `apply()` wiring — the exact diff is [`patch/artifact-patch.diff`](patch/artifact-patch.diff) (9 hunks) |
+| `lib/index.js` | patched: `ArtifactTracker` import, 5 config keys, `turn/end` hook, `previewImpact` merge, `executeRewind` restore/quarantine, `apply()` wiring — the exact diff is [`patch/artifact-patch.diff`](patch/artifact-patch.diff) (10 hunks) |
 | `lib/artifact-track.js` | new module (16.9 KB), source of truth also kept at [`patch/artifact-track.js`](patch/artifact-track.js) |
-| `package.json` | `scripts.prepare` removed, so an install never tries to run a build that is not shipped. Every other field is untouched — including the name. |
+| `package.json` | renamed to `dsh-rollback`; `scripts.prepare` removed, so an install never tries to run a build that is not shipped. |
+| `cordis.patch.yml`, `lib/client.js` | the loader row and the client/entry identity constants renamed with the package (see below). |
 
-The package name **must** stay `dsh-rewind-plugin`: `cordis.patch.yml` inserts a loader row whose
-`id`/`name` equal the package name (the client half resolves `require.resolve('<row-name>/package.json')`),
-and `lib/client.js` hardcodes `PLUGIN_PACKAGE` / `SETTINGS_ENTRY_ID`. Renaming it would mean editing the
-compiled client half and migrating the settings entry id, which is out of scope here.
+The package name is `dsh-rollback`, and it **must** match in four places at once: `package.json` `name`,
+the `cordis.patch.yml` loader row (`id` + `name`), the `__ModuleLoader__.load({ id })` registration in
+`lib/client.js`, and the compiled `PLUGIN_PACKAGE` / `SETTINGS_ENTRY_ID` constants. The harness keys the
+client graph row, the `plugins.bundle.config` slot and the settings entry by that one name — if any of the
+four drifts, the ↶ button and the settings card disappear silently.
+
+The **internal** identifiers are deliberately left with the upstream name, so existing data stays readable:
+the session marker kind `dsh-rewind`, the snapshot directory `rewind-snapshots`, the RPC channel
+`/dsh-rewind`, and the CSS class prefix `dsh-rewind-`.
+
+Renaming the package does drop the old settings document: the harness stores configuration under the entry
+id, so settings saved for `dsh-rewind-plugin` are not read by the renamed entry. Re-set them once on the
+Plugins page; stored snapshots are unaffected.
 
 ## Caveats
 
 - 0.19.1 is the legacy line; upstream keeps no cross-version compatibility, so this fork will not track
   future harness changes.
 - The patch is applied at the **built artifact** level (upstream's source does not contain it). Reinstalling
-  from the npm registry silently loses the patch — reinstall from this tarball, or re-run
-  `scripts/apply-patch.ps1`.
+  the upstream package from the npm registry gets you the unpatched plugin again — reinstall this tarball
+  instead, or run `scripts/refresh.ps1` to re-sync an existing `dsh-rollback` directory.
 - The content cache stores plaintext copies of changed files under the snapshot root; that is the same
   trust boundary the plugin's own backups already use, but it is more data on disk. Bound it with
   `artifactMaxFileBytes` / `artifactExclude`.
@@ -158,7 +170,7 @@ compiled client half and migrating the settings entry id, which is out of scope 
 dist/     the installable tarball (release asset)
 package/  the same package unpacked, for review and diffing
 patch/    the artifact diff + the new module's source
-scripts/  verify.mjs (integrity check), apply-patch.ps1 (patch an existing install)
+scripts/  verify.mjs (integrity check), refresh.ps1 (re-sync an installed copy)
 ```
 
 ## License

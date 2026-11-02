@@ -1,7 +1,7 @@
-diff --git "a/C:\\Users\\xx106\\.dsh\\profiles\\desktop\\node_modules\\dsh-rewind-plugin\\lib\\index.js.orig" "b/C:\\Users\\xx106\\.dsh\\profiles\\desktop\\node_modules\\dsh-rewind-plugin\\lib\\index.js"
+diff --git a/lib/index.js.orig b/lib/index.js
 index 080c6e4..5074a0d 100644
---- "a/C:\\Users\\xx106\\.dsh\\profiles\\desktop\\node_modules\\dsh-rewind-plugin\\lib\\index.js.orig"
-+++ "b/C:\\Users\\xx106\\.dsh\\profiles\\desktop\\node_modules\\dsh-rewind-plugin\\lib\\index.js"
+--- a/lib/index.js.orig
++++ b/lib/index.js
 @@ -2,9 +2,14 @@
  import { createUserMessage } from "@deepseek-ai/dsh-llm";
  import { copyFile as copyFile2, rm as rm2, stat as stat2, unlink } from "node:fs/promises";

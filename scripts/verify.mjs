@@ -14,17 +14,18 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 /** The patched 0.19.1 artifact this repository ships. */
+const PACKAGE_NAME = 'dsh-rollback'
 const EXPECTED = {
   version: '0.19.1',
   files: {
     'lib/index.js': 'cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3',
-    'lib/artifact-track.js': '4092da093da213ae7161381d276d75df7c7fc6c5ea46ac0e6f7c80a628e8239a',
-    'lib/client.js': '654e6e33f36d5c9ad998e3bb3b1720f1ab24886ab9271a7d02a5bd526e7fe313',
+    'lib/artifact-track.js': '03e8ddab92765bf8a53522495b0b657235c327cb94b01d88ff7fe46bd9ba7b6c',
+    'lib/client.js': '5d29b0fa28577bcf8d2c0425029016f18a63efcdfbe138ac0b6d07f21c766461',
   },
 }
 
 const target = resolve(
-  process.argv[2] ?? join(homedir(), '.dsh', 'profiles', 'desktop', 'node_modules', 'dsh-rewind-plugin'),
+  process.argv[2] ?? join(homedir(), '.dsh', 'profiles', 'desktop', 'node_modules', PACKAGE_NAME),
 )
 
 const sha256 = async (path) => createHash('sha256').update(await readFile(path)).digest('hex')
@@ -44,7 +45,7 @@ try {
 }
 
 console.log(`checking ${target}`)
-report(pkg.name === 'dsh-rewind-plugin', 'package name', pkg.name)
+report(pkg.name === PACKAGE_NAME, 'package name', pkg.name)
 report(pkg.version === EXPECTED.version, 'package version', `${pkg.version} (expected ${EXPECTED.version})`)
 
 for (const [file, expected] of Object.entries(EXPECTED.files)) {

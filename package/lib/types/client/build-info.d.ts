@@ -20,6 +20,6 @@ export declare const PLUGIN_VERSION: string;
  * `plugins.bundle.config` key and the `<style data-plugin>` marker the
  * harness's owned-style fallback matches; a test pins it to `package.json`.
  */
-export declare const PLUGIN_PACKAGE = "dsh-rewind-plugin";
+export declare const PLUGIN_PACKAGE = "dsh-rollback";
 /** Short content hash of the client source, for stale-bundle detection. */
 export declare const BUILD_HASH: string;

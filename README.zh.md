@@ -1,7 +1,8 @@
-# dsh-rewind-plugin · 产物追踪补丁（0.19.1）
+# dsh-rollback · dsh-rewind-plugin 0.19.1 的产物追踪补丁版
 
-> [`dsh-rewind-plugin`](https://github.com/SiriLee/dsh-rewind) **0.19.1** 的非官方重打包，加了「命令产物追踪」补丁，
-> 供 DSH harness **0.2.1 线**使用。与上游作者无关，MIT 许可（与上游一致）。
+> `dsh-rollback` 是 [`dsh-rewind-plugin`](https://github.com/SiriLee/dsh-rewind) **0.19.1** 的非官方重打包，
+> 加了「命令产物追踪」补丁，供 DSH harness **0.2.1 线**使用。它是**独立包**（不是顶着上游名字的替换品），
+> 两个包可以并存安装。与上游作者无关，MIT 许可（与上游一致）。
 >
 > 英文版：[README.md](README.md)
 
@@ -62,7 +63,7 @@ harness 升到 0.2.2 线后请换回上游；本仓库只是过渡方案。
 
 ```json
 "dependencies": {
-  "dsh-rewind-plugin": "https://github.com/<owner>/<repo>/releases/download/v0.19.1-artifact-patch.1/dsh-rewind-plugin-0.19.1-artifact-patched.tgz"
+  "dsh-rollback": "https://github.com/<owner>/dsh-rollback/releases/download/v0.19.1-rb.1/dsh-rollback-0.19.1.tgz"
 }
 ```
 
@@ -74,16 +75,15 @@ $pnpm = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnp
 & $node $pnpm install --dir "$env:USERPROFILE\.dsh\profiles\<profile>" --prefer-offline
 ```
 
-同时确认 `dsh-rewind-plugin` 在该 profile 的 `dsh.profile.bundles` 数组里 —— 那个数组才是真正加载插件的开关。
+同时确认 `dsh-rollback` 在该 profile 的 `dsh.profile.bundles` 数组里 —— 那个数组才是真正加载插件的开关。
+如果那里还留着 `dsh-rewind-plugin`，把依赖和 bundles 里的旧行一起删掉：两份同时挂着会各渲染一个 ↶ 按钮。
 
-**B. 从克隆目录装**：`"dsh-rewind-plugin": "file:C:/path/to/dsh-rewind-artifact-patch/dist/dsh-rewind-plugin-0.19.1-artifact-patched.tgz"`
+**B. 从克隆目录装**：`"dsh-rollback": "file:C:/path/to/dsh-rollback/dist/dsh-rollback-0.19.1.tgz"`
 
-**C. 给已装的官方 0.19.1 原地打补丁**：
-
-```powershell
-npm i dsh-rewind-plugin@0.19.1
-.\scripts\apply-patch.ps1 -Target "C:\Users\<you>\.dsh\profiles\<profile>\node_modules"
-```
+**C. 给已装的官方 0.19.1 原地打补丁 —— 改名后不再支持**：DSH 用
+`require.resolve('<包名>/package.json')` 定位客户端半边，`node_modules` 下的目录名必须等于包名，
+所以叫 `dsh-rollback` 的包不能住在 `dsh-rewind-plugin` 目录里。请用 A 或 B 安装；已装的
+`dsh-rollback` 目录可以用 `scripts/refresh.ps1` 重新同步。
 
 ## 校验
 
@@ -99,27 +99,35 @@ node scripts\verify.mjs "<包目录>"
 
 | 目的 | 做法 |
 | --- | --- |
-| 回到干净的 0.19.1 | 依赖改回 `"dsh-rewind-plugin": "0.19.1"` 再装 |
+| 回到干净的上游插件 | 依赖改成 `"dsh-rewind-plugin": "0.19.1"`（或 harness 允许后的 `"0.20.0-alpha.1"`），从依赖和 bundles 里删掉 `dsh-rollback`，再装 |
 | 只清产物数据、保留原有快照 | 删除 `<snapshotDir>/<会话ID>/artifacts/` |
-| harness 升到 0.2.2 后换上游 0.20 | 依赖改成 `"0.20.0-alpha.1"` —— 上游**不含**本补丁 |
+| harness 升到 0.2.2 后换上游 0.20 | 上游**不含**本补丁，0.20 也没有产物追踪 |
 
 ## 与官方 0.19.1 的差异
 
 | 路径 | 改动 |
 | --- | --- |
-| `lib/index.js` | 打补丁：`ArtifactTracker` 导入、5 个配置项、`turn/end` 钩子、`previewImpact` 合并、`executeRewind` 还原/隔离、`apply()` 接线；完整 diff 见 `patch/artifact-patch.diff`（9 个 hunk） |
+| `lib/index.js` | 打补丁：`ArtifactTracker` 导入、5 个配置项、`turn/end` 钩子、`previewImpact` 合并、`executeRewind` 还原/隔离、`apply()` 接线；完整 diff 见 `patch/artifact-patch.diff`（10 个 hunk） |
 | `lib/artifact-track.js` | 新增模块（16.9 KB），源码同时保留在 `patch/artifact-track.js` |
-| `package.json` | 去掉了 `scripts.prepare`，避免安装时尝试跑一个没有随包发布的构建。其他字段（含包名）一律未动 |
+| `package.json` | 包名改为 `dsh-rollback`；去掉 `scripts.prepare`，避免安装时尝试跑一个没有随包发布的构建 |
+| `cordis.patch.yml`、`lib/client.js` | 加载器行与客户端/设置项身份常量随包名一起改（见下） |
 
-包名**必须**保持 `dsh-rewind-plugin`：`cordis.patch.yml` 插入的加载器行 `id`/`name` 要等于包名（客户端半边靠
-`require.resolve('<row-name>/package.json')` 找包），且 `lib/client.js` 里硬编码了 `PLUGIN_PACKAGE` / `SETTINGS_ENTRY_ID`。
-改名需要改编译后的客户端产物并迁移设置项 id，本仓库不做。
+包名是 `dsh-rollback`，且必须在**四处**同时一致：`package.json` 的 `name`、`cordis.patch.yml` 的加载器行
+（`id` + `name`）、`lib/client.js` 里 `__ModuleLoader__.load({ id })` 的注册 id，以及编译后的
+`PLUGIN_PACKAGE` / `SETTINGS_ENTRY_ID`。DSH 用这一个名字做客户端 graph row、`plugins.bundle.config` 槽位和
+设置项 id 的键 —— 四处里任何一处漂移，↶ 按钮和设置卡都会静默消失。
+
+**内部标识**则刻意保留上游名字，旧数据继续可读：会话标记类型 `dsh-rewind`、快照目录 `rewind-snapshots`、
+RPC 频道 `/dsh-rewind`、CSS 类名前缀 `dsh-rewind-`。
+
+改名会丢掉旧的设置文档：DSH 按 entry id 存配置，原来给 `dsh-rewind-plugin` 存的那份（备份开关、清理策略）
+不会被改名后的 entry 读取。到插件页重新设一次即可；已存的快照本身不受影响。
 
 ## 注意
 
 - 0.19.1 是旧线，上游不保留跨版本兼容，本 fork 也不会跟进后续 harness 变化。
-- 补丁打在**构建产物**层（上游源码里没有它）。从 npm registry 重装会静默丢补丁 —— 用本仓库的 tarball 重装，
-  或重跑 `scripts/apply-patch.ps1`。
+- 补丁打在**构建产物**层（上游源码里没有它）。从 npm registry 重装上游包拿回的还是没有补丁的版本 ——
+  用本仓库的 tarball 重装，或对已装的 `dsh-rollback` 目录跑 `scripts/refresh.ps1`。
 - 内容缓存是明文副本，落在快照根目录，与插件自身备份的信任边界一致，但磁盘占用更大；
   用 `artifactMaxFileBytes` / `artifactExclude` 约束它。
 - 上游把这个追踪边界当作有意的设计取舍，本补丁因此可能永远不会被上游接受，只作为本地绕行方案维护。
