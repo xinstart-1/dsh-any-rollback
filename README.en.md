@@ -1,76 +1,120 @@
-# dsh-rollback · artifact patch for dsh-rewind-plugin 0.19.1
+# dsh-rollback
 
-> English mirror. The primary README is Chinese: [README.md](README.md).
+> **In-window conversation rewind for DSH.** Rewind to any earlier user message and restore the workspace
+> with it — including files produced by commands (`node render.mjs`, `ffmpeg`, build and data scripts),
+> not just source files handled by an editor tool. No session forking, no new window: the rewind happens
+> in place.
 >
-> `dsh-rollback` is an unofficial repack of [`dsh-rewind-plugin`](https://github.com/SiriLee/dsh-rewind)
-> **0.19.1** with an artifact-tracking patch, for DSH harness on the **0.2.1 line**. It is a separate package
-> (not a replacement under the upstream name), so both can be installed side by side. Not affiliated with the
-> upstream author. MIT, same as upstream — see [License](#license).
+> 中文版：[README.md](README.md)
 
-## Why this exists
+## The problem
 
-The upstream `main` line (0.20.0-alpha.1) requires DSH `>=0.2.2-alpha.2`; on the 0.2.1 line the plugin is
-refused at load time. 0.19.1 is the last release that runs there — but 0.19.1 does not track files that
-commands produce, which is exactly what agent work tends to leave behind.
+A turn of agent work usually leaves two kinds of traces: messages in the conversation, and files on disk.
+"Go back to that step and try again" only works if both return to their earlier state — rewinding the
+conversation alone leaves half-edited files behind, and restoring files alone leaves the model in the
+wrong context.
 
-| Version | `engines.dsh` | Runs on DSH 0.2.1-rc.5 |
+`dsh-rollback` does both: click ↶ on a message and the conversation returns to just before it, with the
+workspace restored to how it looked at that moment.
+
+| Situation | Without this plugin | With it |
 | --- | --- | --- |
-| `0.19.1` (this repo, patched) | `>=0.2.1-rc.1 <0.3.0-0` | yes |
-| `0.20.0-alpha.1` (upstream) | `>=0.2.2-alpha.2 <0.3.0-0` | no — refused at load |
+| Three iterations of a render script, back to the first | clean up a pile of mp4 files by hand | one rewind restores them; newer files move to quarantine |
+| A refactor went wrong | conversation rewinds, files stay broken | conversation and files return together |
+| Several failed attempts, restart from one step | open a new session, lose context | rewind in place, same window |
 
-When your harness reaches the 0.2.2 line, switch back to upstream; this repository is a stop-gap.
+## Features
 
-## What the patch changes
+### 1. Rewind the conversation by message
 
-**The gap.** Upstream tracks two tools only — a file becomes restorable by being handled by `write` or
-`edit` at least once. Anything a command produces (`node render.mjs`, `ffmpeg`, a build or data script)
-never joins that list, so a rewind leaves it alone: a file that did not exist at the target state stays on
-disk, and a file whose bytes changed keeps the newer bytes while the rewind reports "no restorable
-changes". These files are also usually far above the 8 MiB `maxFileBytes` cap, which is never even
-consulted for them. Upstream documents this as *Limitation 1* in
-[`docs/compat/tracking-boundary.md`](https://github.com/SiriLee/dsh-rewind/blob/main/docs/compat/tracking-boundary.md)
-and deliberately accepts it.
+Every user message has a ↶ button. It withdraws everything after that message from the conversation view
+(the session log stays append-only and fully auditable), and puts the withdrawn text back in the composer so
+you can edit and resend.
 
-**What the patch does.** At each turn boundary it writes a manifest of the workspace
-(`path → size + mtime + sha256`) and caches content **only for entries that changed**, keyed by digest, so
-re-rendering identical bytes costs nothing. On a rewind:
+Commands work too:
+
+| Command | Effect |
+| --- | --- |
+| `/rewind <index>` | rewind to just before the Nth user message |
+| `/rewind @<seq>` | rewind by in-session sequence number |
+| `/undo` | revert the last rewind |
+
+### 2. Restore workspace files at the same time
+
+A rewind can restore the conversation only, the files only, or both. File restores read **only the plugin's
+own backup directory** — it never guesses, and only writes back content it actually backed up.
+
+### 3. Track files produced by commands (the part most tools miss)
+
+Most implementations back up only files the model touched through `write` / `edit`. But agent work usually
+produces files through commands: frame sequences from `node render.mjs`, a video muxed by `ffmpeg`, build
+output in `dist/`, a data script's `*.parquet`. Nothing ever "edited" them, so conventional checkpoints
+ignore them entirely.
+
+This plugin writes a workspace manifest at each turn boundary (`path → size + mtime + sha256`) and caches
+content **only for entries that changed**, keyed by digest, so re-rendering identical bytes costs nothing.
+On a rewind it decides per file:
 
 | At the target state | Now | Action |
 | --- | --- | --- |
 | existed, content cached | different or missing | restore the cached bytes |
-| absent | exists (a command created it) | move to `quarantine/`, record the destination in `index.json` |
-| existed, content not cached (large / uncached) | different or missing | move to `quarantine/`, report "regenerate if needed" |
+| absent | exists (created by a command) | move to quarantine, never delete |
+| existed, content not cached (too large / uncached) | different or missing | move to quarantine, report "regenerate if needed" |
 
-Quarantine is a move, never a delete: the bytes are kept under the snapshot root and listed in
-`index.json` so they can be recovered by hand.
+**Quarantine only moves, never deletes**: bytes stay on disk with their origin recorded in `index.json`.
+Losing a two-hour render to a rewind would be unacceptable, so the plugin spends disk space instead.
 
-### Configuration
+### 4. Automatic snapshot cleanup
+
+Backups take space, so they are pruned by policy: an on/off switch, an idle-age cutoff, and a manual sweep.
+
+| Command | Effect |
+| --- | --- |
+| `/snapshot-auto-cleanup` | show current status |
+| `/snapshot-auto-cleanup on\|off` | enable / disable auto cleanup |
+| `/snapshot-auto-cleanup max-age <days>` | set the idle cutoff |
+| `/snapshot-auto-cleanup run [--apply]` | dry run, or actually sweep |
+| `/snapshot-auto-cleanup run --current [--apply]` | sweep only this session |
+
+### 5. Settings card
+
+A dedicated card on the DSH Plugins page covers the backup switch and the cleanup policy, so no config file
+editing is needed.
+
+## Configuration
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `artifactTrackingEnabled` | `true` | master switch |
-| `artifactMaxFileBytes` | `67108864` (64 MiB) | per-file cache cap, independent of `maxFileBytes` |
-| `artifactBaselineContent` | `false` | also cache the first observation (enables restoring pre-existing content the plugin never saw) |
-| `artifactExclude` | `node_modules,.git,dist,build,out,.next,.nuxt,.cache,.turbo,coverage,__pycache__,venv,.venv,target` | subtree names skipped |
+| `fileCheckpointingEnabled` | `true` | record new file backups |
+| `maxFileBytes` | `8388608` (8 MiB) | per-file backup cap; `0` disables it |
+| `snapshotDir` | `~/.dsh/rewind-snapshots/` | backup root |
+| `artifactTrackingEnabled` | `true` | track command-produced files |
+| `artifactMaxFileBytes` | `67108864` (64 MiB) | per-file cache cap for artifacts, independent of `maxFileBytes` |
+| `artifactBaselineContent` | `false` | also cache the first observation (costlier; restores large pre-existing content) |
+| `artifactExclude` | `node_modules,.git,dist,build,out,.next,.nuxt,.cache,.turbo,coverage,__pycache__,venv,.venv,target` | subtrees skipped while tracking |
 | `artifactKeepManifests` | `20` | manifests kept per session |
+| `autoCleanupEnabled` | `true` | automatic cleanup switch |
+| `autoCleanupMaxAgeDays` | `30` | idle days before a backup may be swept |
 
-### Storage
+## Where data lives
 
 ```
-<snapshotDir>/<sessionId>/artifacts/
-  manifests/<seq>.json      # one manifest per turn boundary
-  quarantine/               # moved-out files
-  quarantine/index.json     # where every quarantined file came from
+~/.dsh/rewind-snapshots/<sessionId>/
+  <messageSeq>/          # per-message file backups
+  artifacts/
+    manifests/           # one workspace manifest per turn boundary
+    quarantine/          # files moved out by a rewind
+    quarantine/index.json # where each quarantined file came from
 ```
 
-`<snapshotDir>` is the plugin's existing `snapshotDir` (`~/.dsh/rewind-snapshots/` by default), so
-cleaning that directory still removes everything this patch stores.
+The backup root is a sibling of the workspace, never a subtree of it. Deleting it loses rewind history but
+never touches project files.
 
 ## Install
 
-### A. From this repository's release tarball (recommended)
+### From the release (recommended)
 
-In `~/.dsh/profiles/<profile>/package.json`:
+In the profile's `package.json`:
 
 ```json
 "dependencies": {
@@ -78,7 +122,7 @@ In `~/.dsh/profiles/<profile>/package.json`:
 }
 ```
 
-then install and restart DSH:
+Install and restart DSH:
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
@@ -86,28 +130,27 @@ $pnpm = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnp
 & $node $pnpm install --dir "$env:USERPROFILE\.dsh\profiles\<profile>" --prefer-offline
 ```
 
-Make sure `dsh-rollback` is also listed in that profile's `dsh.profile.bundles` array — that array is what
-actually loads the plugin. Remove `dsh-rewind-plugin` from both places if it is still there: a row and a
-dependency can stay mounted together, but two copies of the same rewind UI would both render a ↶ button.
+Also make sure `dsh-rollback` is listed in that profile's `dsh.profile.bundles` array — that array is what
+actually loads the plugin.
 
-### B. From a clone
+### From a local clone
 
 ```json
 "dsh-rollback": "file:C:/path/to/dsh-rollback/dist/dsh-rollback-0.19.1.tgz"
 ```
 
-### C. Patch a pristine upstream `dsh-rewind-plugin@0.19.1` install
+## Requirements
 
-Not supported after the rename. The harness resolves the client half with
-`require.resolve('<package-name>/package.json')`, so the directory under `node_modules` must be named after
-the package; a package called `dsh-rollback` cannot live in a `dsh-rewind-plugin` directory. Install from the
-tarball (A) or a clone (B), and use `scripts/refresh.ps1` to re-sync an existing `dsh-rollback` copy.
+| Item | Requirement |
+| --- | --- |
+| DSH | `>=0.2.1-rc.1 <0.3.0-0` |
+| Node.js | `^22.19.0` or `>=24.0.0` |
 
-## Verify
+## Verify the install
 
 ```powershell
-node scripts\verify.mjs                                            # default: desktop profile
-node scripts\verify.mjs "C:\path\to\node_modules\dsh-rollback"
+node scripts\verify.mjs                                            # current desktop profile
+node scripts\verify.mjs "C:\path\to\node_modules\dsh-rollback"      # any unpacked dir
 ```
 
 Expected digests (SHA-256):
@@ -115,67 +158,41 @@ Expected digests (SHA-256):
 | File | SHA-256 |
 | --- | --- |
 | `lib/index.js` | `cd386603cc41df3f3ddae1b8a34a11cb5a4033a365521ddd6adf9db39fe4f7a3` |
-| `lib/artifact-track.js` | `03e8ddab92765bf8a53522495b0b657235c327cb94b01d88ff7fe46bd9ba7b6c` |
+| `lib/artifact-track.js` | `e3d909c91f25ee144d668b2841278d14fd9dfab4d625596d7fe808622a29f1e6` |
 | `lib/client.js` | `5d29b0fa28577bcf8d2c0425029016f18a63efcdfbe138ac0b6d07f21c766461` |
-| `dist/dsh-rollback-0.19.1.tgz` | `0e0bd8f9ad4a79aeb382b15fa29e8dac27b95552b6d17249dea5c931e74cb46f` |
+| `dist/dsh-rollback-0.19.1.tgz` | `7a18df38e9323aec964e49b5720a08933ddb921ba12939fec64e9b13b00bb28f` |
 
-Runtime proof after a restart: run one turn, then check that
-`~/.dsh/rewind-snapshots/<sessionId>/artifacts/manifests/` exists. The ↶ button should be back too.
+**Restart DSH** after installing (the host half loads once per process). Then run one turn and confirm a
+manifest appeared under `~/.dsh/rewind-snapshots/<sessionId>/artifacts/manifests/` and the ↶ buttons show up.
 
-## Rollback / upgrade
+## Uninstall
 
-| Goal | Do |
-| --- | --- |
-| back to the plain upstream plugin | dependency `"dsh-rewind-plugin": "0.19.1"` (registry) or `"0.20.0-alpha.1"` once the harness allows it, drop `dsh-rollback`, then reinstall |
-| keep snapshots, drop artifact data only | delete `<snapshotDir>/<sessionId>/artifacts/` |
-| move to upstream 0.20 when the harness allows it | this patch is **not** in upstream; 0.20.0 also has no artifact tracking |
+Remove `dsh-rollback` from the profile's `dependencies` and `dsh.profile.bundles`, then reinstall. Backup
+data is not deleted automatically — remove `~/.dsh/rewind-snapshots/` to wipe it.
 
-## What differs from the published 0.19.1
+## Design decisions
 
-| Path | Change |
-| --- | --- |
-| `lib/index.js` | patched: `ArtifactTracker` import, 5 config keys, `turn/end` hook, `previewImpact` merge, `executeRewind` restore/quarantine, `apply()` wiring — the exact diff is [`patch/artifact-patch.diff`](patch/artifact-patch.diff) (10 hunks) |
-| `lib/artifact-track.js` | new module (16.9 KB), source of truth also kept at [`patch/artifact-track.js`](patch/artifact-track.js) |
-| `package.json` | renamed to `dsh-rollback`; `scripts.prepare` removed, so an install never tries to run a build that is not shipped. |
-| `cordis.patch.yml`, `lib/client.js` | the loader row and the client/entry identity constants renamed with the package (see below). |
+- **Only write back what was backed up.** Prefer restoring less over overwriting with a guess.
+- **Never delete a file.** Anything that must leave the worktree goes to quarantine.
+- **The session log is append-only.** A rewind changes the conversation view; history stays complete.
+- **The backup root is separate from the workspace.** It cannot be clobbered by project clean scripts.
 
-The package name is `dsh-rollback`, and it **must** match in four places at once: `package.json` `name`,
-the `cordis.patch.yml` loader row (`id` + `name`), the `__ModuleLoader__.load({ id })` registration in
-`lib/client.js`, and the compiled `PLUGIN_PACKAGE` / `SETTINGS_ENTRY_ID` constants. The harness keys the
-client graph row, the `plugins.bundle.config` slot and the settings entry by that one name — if any of the
-four drifts, the ↶ button and the settings card disappear silently.
+## Known limits
 
-The **internal** identifiers are deliberately left with the upstream name, so existing data stays readable:
-the session marker kind `dsh-rewind`, the snapshot directory `rewind-snapshots`, the RPC channel
-`/dsh-rewind`, and the CSS class prefix `dsh-rewind-`.
-
-Renaming the package does drop the old settings document: the harness stores configuration under the entry
-id, so settings saved for `dsh-rewind-plugin` are not read by the renamed entry. Re-set them once on the
-Plugins page; stored snapshots are unaffected.
-
-## Caveats
-
-- 0.19.1 is the legacy line; upstream keeps no cross-version compatibility, so this fork will not track
-  future harness changes.
-- The patch is applied at the **built artifact** level (upstream's source does not contain it). Reinstalling
-  the upstream package from the npm registry gets you the unpatched plugin again — reinstall this tarball
-  instead, or run `scripts/refresh.ps1` to re-sync an existing `dsh-rollback` directory.
-- The content cache stores plaintext copies of changed files under the snapshot root; that is the same
-  trust boundary the plugin's own backups already use, but it is more data on disk. Bound it with
-  `artifactMaxFileBytes` / `artifactExclude`.
-- Upstream treats the tracking boundary as a deliberate design decision, so this may never land upstream.
-  It is maintained here as a local bypass.
+- Rewinding needs existing backups. History from before the plugin was installed, or changes made while
+  backups were off, has no record and cannot be restored.
+- A file above the backup cap gets no new backup; a rewind skips it and says so.
+- After a conversation compaction, messages earlier than the compaction point drop out of the rewind list.
 
 ## Repository layout
 
 ```
-dist/     the installable tarball (release asset)
-package/  the same package unpacked, for review and diffing
-patch/    the artifact diff + the new module's source
+dist/     installable tarball (release asset)
+package/  the same package unpacked, for review
+lib/      host and client entry points (build output)
 scripts/  verify.mjs (integrity check), refresh.ps1 (re-sync an installed copy)
 ```
 
 ## License
 
-MIT. Upstream plugin © SiriLee ([SiriLee/dsh-rewind](https://github.com/SiriLee/dsh-rewind)); the
-artifact-tracking patch and this packaging are released under the same MIT terms. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

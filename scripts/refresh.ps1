@@ -1,19 +1,16 @@
 <#
-  refresh.ps1 — bring an installed dsh-rollback copy up to this repository's files.
+  refresh.ps1 — 把已安装的 dsh-rollback 更新为本仓库的当前文件。
 
-  After the rename, an in-place patch of an upstream `dsh-rewind-plugin`
-  directory is NOT possible: the harness resolves the client half with
-  `require.resolve('<package-name>/package.json')`, so the directory name under
-  node_modules must equal the name in the manifest. The supported install paths
-  are the release tarball or a clone (see README) — this script only refreshes a
-  copy that is already `dsh-rollback`, e.g. after re-downloading or hand-editing.
+  DSH 用 `require.resolve('<包名>/package.json')` 定位客户端半边，所以 node_modules
+  下的目录名必须等于包名。本脚本只用于刷新一个已经叫 dsh-rollback 的安装副本，
+  例如手工改动过、或想从本仓库直接同步时。
 
-  Usage:
-    .\scripts\refresh.ps1                                  # the desktop profile
-    .\scripts\refresh.ps1 -Target <profile>\node_modules    # another profile
-    .\scripts\refresh.ps1 -Target <dir> -DryRun             # report only
+  用法:
+    .\scripts\refresh.ps1                                   # 默认桌面 profile
+    .\scripts\refresh.ps1 -Target <profile>\node_modules     # 其它 profile
+    .\scripts\refresh.ps1 -Target <dir> -DryRun              # 只报告，不改动
 
-  Exit codes: 0 refreshed or already current, 2 not found, 3 unexpected version.
+  退出码: 0 已刷新或本来就是最新, 2 目标不存在, 3 版本不符。
 #>
 param(
   [string]$Target = (Join-Path $env:USERPROFILE '.dsh\profiles\desktop\node_modules'),
@@ -22,47 +19,41 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$source = Join-Path $root 'package'
 $pkgDir = Join-Path $Target 'dsh-rollback'
 $manifest = Join-Path $pkgDir 'package.json'
 
 if (-not (Test-Path $manifest)) {
-  $upstream = Join-Path $Target 'dsh-rewind-plugin'
-  if (Test-Path (Join-Path $upstream 'package.json')) {
-    Write-Host "found the upstream 'dsh-rewind-plugin' directory, not 'dsh-rollback'." -ForegroundColor Yellow
-    Write-Host 'An in-place patch cannot work: the directory name must equal the package name.' -ForegroundColor Yellow
-    Write-Host 'Install this package from the tarball or a clone instead — see README "Install".' -ForegroundColor Yellow
-  } else {
-    Write-Host "no dsh-rollback under $Target" -ForegroundColor Red
-  }
+  Write-Host "目标下没有 dsh-rollback: $Target" -ForegroundColor Red
+  Write-Host '请按 README「安装」一节用 Release tarball 或本地目录安装。' -ForegroundColor Yellow
   exit 2
 }
 
 $installed = (Get-Content $manifest -Raw -Encoding UTF8 | ConvertFrom-Json).version
-if ($installed -ne '0.19.1') {
-  Write-Host "installed version is $installed; this package ships 0.19.1" -ForegroundColor Red
+$expected = (Get-Content (Join-Path $root 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+if ($installed -ne $expected) {
+  Write-Host "已装版本 $installed，本仓库版本 $expected，拒绝刷新" -ForegroundColor Red
   exit 3
 }
 
 $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
 $changed = 0
 foreach ($relative in @('lib\index.js', 'lib\client.js', 'lib\artifact-track.js', 'cordis.patch.yml', 'package.json')) {
-  $from = Join-Path $source $relative
+  $from = Join-Path $root $relative
   $to = Join-Path $pkgDir $relative
   $exists = Test-Path $to
   $same = $exists -and ((Get-FileHash $to -Algorithm SHA256).Hash -eq (Get-FileHash $from -Algorithm SHA256).Hash)
-  if ($same) { Write-Host ("{0,-24} current" -f $relative) -ForegroundColor DarkGray; continue }
-  if ($DryRun) { Write-Host ("{0,-24} would update" -f $relative) -ForegroundColor Yellow; continue }
+  if ($same) { Write-Host ("{0,-24} 已是最新" -f $relative) -ForegroundColor DarkGray; continue }
+  if ($DryRun) { Write-Host ("{0,-24} 需要更新" -f $relative) -ForegroundColor Yellow; continue }
   if ($exists) { Copy-Item $to "$to.bak-$stamp" -Force; Remove-Item $to -Force }
   Copy-Item $from $to -Force
-  Write-Host ("{0,-24} updated" -f $relative) -ForegroundColor Green
+  Write-Host ("{0,-24} 已更新" -f $relative) -ForegroundColor Green
   $changed++
 }
 
 Write-Host ''
 if ($changed -eq 0) {
-  Write-Host 'already up to date' -ForegroundColor Green
+  Write-Host '已经是最新，无需改动' -ForegroundColor Green
 } else {
-  Write-Host 'restart DSH to apply (the host half loads once per process).' -ForegroundColor Green
+  Write-Host '请重启 DSH 生效（宿主侧每个进程只加载一次）' -ForegroundColor Green
 }
-Write-Host "verify: node scripts/verify.mjs `"$pkgDir`""
+Write-Host "校验: node scripts/verify.mjs `"$pkgDir`""
