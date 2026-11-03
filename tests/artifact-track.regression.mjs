@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// 回归测试：覆盖已修复的四个缺陷。每个用例独立建临时工作区，
+// 回归测试：覆盖已修复的缺陷。每个用例独立建临时工作区，
 // 直接在真实实现（lib/artifact-track.js）上跑，失败即非零退出。
-import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, stat, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ArtifactTracker } from '../lib/artifact-track.js'
@@ -134,6 +134,109 @@ console.log('用例 4：点目录内的产物要被追踪')
   const last = JSON.parse(await readFile(join(root, 's', 'artifacts', 'manifests', manifests[manifests.length - 1]), 'utf8'))
   check('.output/render.png' in last.files, '点目录产物进入清单')
   check(!('.git/index' in last.files), '.git 仍被排除')
+  await cleanup(base)
+}
+
+// ── 5. 清单缺失/陈旧时不得误删老文件（用户实测事故）──────────────────────
+// 事故：4 轮对话一份轮次清单都没落盘（cwd 未注册时的竞态），回退到第 3 句时
+// stateAt 退化到 5 小时前的旧清单，于是「旧清单没有、磁盘上有」的文件全被判成
+// 「新建产物」列进删除清单 —— 用户只打了一句「测试」，却看到 5 个无关文件待删。
+console.log('用例 5：清单陈旧时，早于清单的文件不得被判 created')
+{
+  const { tracker, root, cwd, base } = await setup('stale')
+  const old = new Date(Date.now() - 7200_000)
+  const older = new Date(Date.now() - 3600_000)
+
+  // 清单：只有 a.mjs
+  await writeFile(join(cwd, 'a.mjs'), 'aaa')
+  await tracker.onTurnEnd('s', 10)
+
+  // 把清单时间改成「1 小时前」，并把 a.mjs 的 mtime 也推到 2 小时前
+  const mdir = join(root, 's', 'artifacts', 'manifests')
+  const mp = join(mdir, '000000000010.json')
+  const man = JSON.parse(await readFile(mp, 'utf8'))
+  man.at = older.getTime()
+  for (const rel of Object.keys(man.files)) man.files[rel][1] = old.getTime()
+  await writeFile(mp, JSON.stringify(man))
+  await utimes(join(cwd, 'a.mjs'), old, old)
+
+  // 3 个「早就存在但清单漏记」的文件
+  for (const name of ['b.mjs', 'c.mjs', 'd.mjs']) {
+    await writeFile(join(cwd, name), 'old')
+    await utimes(join(cwd, name), old, old)
+  }
+  // 1 个「确实在清单之后新建」的文件
+  await writeFile(join(cwd, 'fresh.mjs'), 'new')
+
+  const plan = await tracker.plan('s', 50)
+  const deletes = plan.actions.filter((a) => a.action === 'delete').map((a) => a.rel)
+  const skipped = plan.skipped.map((s) => s.rel)
+
+  check(deletes.length === 1 && deletes[0] === 'fresh.mjs', '只删除清单之后新建的文件', JSON.stringify(deletes))
+  check(
+    ['b.mjs', 'c.mjs', 'd.mjs'].every((f) => skipped.includes(f)),
+    '早于清单的文件全部跳过（不误删）',
+    JSON.stringify(plan.skipped),
+  )
+  await cleanup(base)
+}
+
+// ── 6. cwd 兜底：注册竞态时也要能记下清单 ───────────────────────────────
+console.log('用例 6：cwd 未注册时用 cwdHint 兜底记录清单')
+{
+  const base = await mkdtemp(join(tmpdir(), 'anyrb-hint-'))
+  const root = join(base, 'snapshots')
+  const cwd = join(base, 'workspace')
+  await mkdir(cwd, { recursive: true })
+  // cwdOf 返回 undefined —— 模拟 artifactCwds 还没注册
+  const tracker = new ArtifactTracker({
+    rootDir: () => root,
+    cwdOf: () => undefined,
+    logger: { warn() {}, error() {} },
+  })
+  await writeFile(join(cwd, 'x.txt'), 'x')
+
+  const plain = await tracker.onTurnEnd('s', 10)
+  check(plain === undefined, '无 cwdHint 时确实记不下来（旧行为）', String(plain))
+
+  const withHint = await tracker.onTurnEnd('s', 10, cwd)
+  check(withHint !== undefined && withHint.key === 10, 'cwdHint 兜底后清单落盘', JSON.stringify(withHint))
+
+  const keys = await tracker.listManifestKeys('s')
+  check(keys.includes(10), '清单 key 出现在列表里', JSON.stringify(keys))
+  await cleanup(base)
+}
+
+// ── 7. 累积回退语义（用户明确的产品模型）────────────────────────────────
+// 「第1句产生3个产物，第2句2个，第3句3个；回退第1句 → 后面几句的产物一起回退」
+// 这是插件的核心承诺，也是重构 plan() 的判定基准时必须保住的语义。
+console.log('用例 7：回退第 1 句 → 第 2/3 句产生的产物一起撤销')
+{
+  const { tracker, cwd, base } = await setup('cumul')
+  const turns = [
+    { seq: 10, files: ['a1.mp4', 'a2.mp4', 'a3.mp4'] },
+    { seq: 20, files: ['b1.mp4', 'b2.mp4'] },
+    { seq: 30, files: ['c1.mp4', 'c2.mp4', 'c3.mp4'] },
+  ]
+  for (const turn of turns) {
+    for (const name of turn.files) await writeFile(join(cwd, name), name)
+    await tracker.onTurnEnd('s', turn.seq)
+  }
+
+  const keys = await tracker.listManifestKeys('s')
+  check(JSON.stringify(keys) === JSON.stringify([0, 10, 20, 30]), '三轮各记一份清单', JSON.stringify(keys))
+
+  const plan = await tracker.plan('s', 10)
+  const deletes = plan.actions.filter((a) => a.action === 'delete').map((a) => a.rel).sort()
+  const expected = ['a1.mp4', 'a2.mp4', 'a3.mp4', 'b1.mp4', 'b2.mp4', 'c1.mp4', 'c2.mp4', 'c3.mp4'].sort()
+  check(JSON.stringify(deletes) === JSON.stringify(expected), '三句产生的 8 个产物全部撤销', JSON.stringify(deletes))
+  check(plan.coverage === 'ok', '清单完整 → 严格模式', String(plan.coverage))
+
+  // 回到第 2 句：只撤第 2/3 句的产物，第 1 句的保留
+  const plan2 = await tracker.plan('s', 20)
+  const deletes2 = plan2.actions.filter((a) => a.action === 'delete').map((a) => a.rel).sort()
+  const expected2 = ['b1.mp4', 'b2.mp4', 'c1.mp4', 'c2.mp4', 'c3.mp4'].sort()
+  check(JSON.stringify(deletes2) === JSON.stringify(expected2), '回退第 2 句：只撤第 2/3 句的产物', JSON.stringify(deletes2))
   await cleanup(base)
 }
 
