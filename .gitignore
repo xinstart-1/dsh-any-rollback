@@ -6,3 +6,6 @@ Thumbs.db
 # DSH writes pasted attachments and its own scratch state here
 .dsh-file-attachment/
 .dsh/
+
+# agent scratch state
+.dsh-tmp/
