@@ -19,7 +19,7 @@ const grab = (name) => {
   return src.slice(s, i + 1)
 }
 // chatNodesOf 也在产物里，注入以便两个函数可用
-const helperSrc = grab('assistantSeqOfMessage') + '\n' + grab('userSeqBeforeReply')
+const helperSrc = grab('assistantSeqOfMessage') + '\n' + grab('nodeAnchorSeqOf') + '\n' + grab('userSeqBeforeReply')
 const chatNodesOf = (chat) => {
   if (chat === void 0) return []
   const values = chat.nodes.values
@@ -57,6 +57,33 @@ console.log('2) messageId → 回复节点 seq')
 check(assistantSeqOfMessage(chat, 'm1') === 14, 'm1 → 14')
 check(assistantSeqOfMessage(chat, 'm2') === 24, 'm2 → 24')
 check(assistantSeqOfMessage(chat, 'nope') === void 0, '未知 messageId → undefined')
+
+console.log('2b) 宿主真实形状：assistant-step 把 messageId 放在 data.finalNode')
+{
+  // asar 原文：assistant-step 的 data = {status,turn,step,blocks,time,usage?,finalNode?}，
+  // turn-tail 用 closing.finalNode.messageId 渲染助手行动作槽。
+  const step = (key, seq, messageId, turn) => ({
+    key,
+    kind: 'assistant-step',
+    anchorSeq: seq,
+    data: { status: 'settled', turn, step: 1, blocks: [], time: 0, finalNode: { seq, messageId } },
+  })
+  const hostChat = {
+    nodes: new Map([
+      ['u10', N('u10', 'user', 10)],
+      ['a14', step('a14', 14, 'm1', 1)],
+      ['u20', N('u20', 'user', 20)],
+      ['a24', step('a24', 24, 'm2', 2)],
+    ]),
+    order: ['u10', 'a14', 'u20', 'a24'],
+  }
+  check(assistantSeqOfMessage(hostChat, 'm1') === 14, 'assistant-step: m1 → 14', String(assistantSeqOfMessage(hostChat, 'm1')))
+  check(assistantSeqOfMessage(hostChat, 'm2') === 24, 'assistant-step: m2 → 24', String(assistantSeqOfMessage(hostChat, 'm2')))
+  // 真实链路：点第 1 条回复的 ↻ 应回溯到 #10，而不是最新一轮
+  check(userSeqBeforeReply(hostChat, assistantSeqOfMessage(hostChat, 'm1')) === 10, '点旧回复 → 回退点 #10（不是最新）', String(userSeqBeforeReply(hostChat, assistantSeqOfMessage(hostChat, 'm1')))
+  )
+  check(userSeqBeforeReply(hostChat, assistantSeqOfMessage(hostChat, 'm2')) === 20, '点最新回复 → 回退点 #20')
+}
 
 console.log('3) 边界：首条回复前无用户消息')
 {

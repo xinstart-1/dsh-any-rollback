@@ -287,11 +287,12 @@ const assistantEvent = (seq) => ({
   data: { message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] }, source: { kind: 'model' } },
 })
 // 插件自己追加的遮蔽标记（真实形状：source.kind 为 'dsh-rewind'，非人类消息）
+// 注意：真实落盘里 data 只有 content/source/role/id，插件挂在消息对象上的 data.op
+// **不会被持久化**；「是不是 regenerate 产生的」只能由 command/run + command/done 判定。
 const regenMarkerEvent = (seq, cited) => ({
   type: 'user/message',
   seq,
   data: {
-    op: 'regenerate',
     sourceEventSeqs: [...cited],
     message: { role: 'user', content: [{ type: 'text', text: '(empty message)' }] },
     source: { kind: 'dsh-rewind' },
@@ -304,13 +305,22 @@ const hostShapedMarkerEvent = (seq, nestedCited) => ({
   type: 'user/message',
   seq,
   data: {
-    op: 'regenerate',
     message: { role: 'user', content: [{ type: 'text', text: '(empty message)' }] },
     source: { kind: 'dsh-rewind' },
   },
   sourceEventSeqs: nestedCited,
   surfaceOp: { op: 'replace', startSeq: 10, endSeq: 14 },
 })
+// 一条 regen 命令在日志里的真实痕迹：command/run 记 name，command/done 记 marker seq。
+const regenCommandEvents = (runSeq, doneSeq, markerSeq, commandId = `cmd-${runSeq}`) => [
+  { type: 'command/run', seq: runSeq, time: 0, data: { commandId, name: 'regen', args: '', source: { kind: 'user' } } },
+  { type: 'command/done', seq: doneSeq, time: 0, data: { commandId, kind: 'success', text: `Rewound to #10.`, sourceEventSeq: markerSeq } },
+]
+// 一条 /rewind（引擎命令）痕迹：它产生的标记**不该**被算进 regen 版本。
+const rewindCommandEvents = (runSeq, doneSeq, markerSeq, commandId = `cmd-${runSeq}`) => [
+  { type: 'command/run', seq: runSeq, time: 0, data: { commandId, name: 'rewind-plugin', args: ' @10 chat', source: { kind: 'user' } } },
+  { type: 'command/done', seq: doneSeq, time: 0, data: { commandId, kind: 'success', text: 'rewound', sourceEventSeq: markerSeq } },
+]
 
 // ── 装配 ──────────────────────────────────────────────────────────────────────
 let harness
@@ -385,7 +395,11 @@ try {
 
     const oneMarker = createSession({
       id: 'sess-list-one',
-      events: [humanUserEvent(10, 'render it'), assistantEvent(14), regenMarkerEvent(20, [10, 14])],
+      events: [
+        humanUserEvent(10, 'render it'), assistantEvent(14),
+        ...regenCommandEvents(16, 18, 20),
+        regenMarkerEvent(20, [10, 14]),
+      ],
     })
     const call2 = await invokeRegen(regenHandler, createAgent(oneMarker), 'list')
     check(call2.ok, '/regen list（一条）不抛异常', describeError(call2.error))
@@ -396,7 +410,11 @@ try {
     // 宿主真实形态：sourceEventSeqs 在顶层且是嵌套区间 [[10,12],14]
     const hosted = createSession({
       id: 'sess-list-host',
-      events: [humanUserEvent(10, 'render it'), assistantEvent(14), hostShapedMarkerEvent(20, [[10, 12], 14])],
+      events: [
+        humanUserEvent(10, 'render it'), assistantEvent(14),
+        ...regenCommandEvents(16, 18, 20),
+        hostShapedMarkerEvent(20, [[10, 12], 14]),
+      ],
     })
     const call3 = await invokeRegen(regenHandler, createAgent(hosted), 'list')
     check(call3.ok && call3.result?.kind === 'success', '/regen list（宿主形态）返回 success', show(call3.result))
@@ -410,7 +428,11 @@ try {
   {
     const session = createSession({
       id: 'sess-v1',
-      events: [humanUserEvent(10, 'render it'), assistantEvent(14), regenMarkerEvent(20, [10, 14])],
+      events: [
+        humanUserEvent(10, 'render it'), assistantEvent(14),
+        ...regenCommandEvents(16, 18, 20),
+        regenMarkerEvent(20, [10, 14]),
+      ],
     })
     const agent = createAgent(session)
     const call = await invokeRegen(regenHandler, agent, 'v1')
@@ -420,9 +442,9 @@ try {
     const text = call.ok ? String(call.result?.text ?? '') : ''
     check(text.includes('10'), '切换文案引用了回退点 #10', show(text))
     // 行为断言（与文案无关）：切版本会再追加一条遮蔽标记
-    const markers = session.snapshotEvents().filter((event) => event.type === 'user/message' && event.data?.op === 'regenerate')
-    check(markers.length === 2, '切版本后日志里多了一条 regenerate 标记', String(markers.length))
-    check(markers.at(-1)?.data?.regenSwitchTo === 1, '新标记记录了 regenSwitchTo=1', show(markers.at(-1)?.data))
+    // 真实落盘里没有 data.op / regenSwitchTo，只能按「新增了遮蔽标记」判定
+    const markers = session.snapshotEvents().filter((event) => event.type === 'user/message' && event.data?.source?.kind === 'dsh-rewind')
+    check(markers.length === 2, '切版本后日志里多了一条遮蔽标记', String(markers.length))
   }
 
   // ── 5) v9：越界 ──
@@ -430,7 +452,11 @@ try {
   {
     const session = createSession({
       id: 'sess-v9',
-      events: [humanUserEvent(10, 'render it'), assistantEvent(14), regenMarkerEvent(20, [10, 14])],
+      events: [
+        humanUserEvent(10, 'render it'), assistantEvent(14),
+        ...regenCommandEvents(16, 18, 20),
+        regenMarkerEvent(20, [10, 14]),
+      ],
     })
     const call = await invokeRegen(regenHandler, createAgent(session), 'v9')
     check(call.ok, '/regen v9 不抛异常', describeError(call.error))

@@ -16,11 +16,11 @@ import { join, resolve } from 'node:path'
 /** 本仓库发布的版本与各文件摘要。 */
 const PACKAGE_NAME = 'dsh-any-rollback'
 const EXPECTED = {
-  version: '0.19.1-any.9',
+  version: '0.19.1-any.10',
   files: {
-    'lib/index.js': 'c94c9c5bd81b184363b8c3a69baf9467a2da844d2da56498a63258446092a514',
+    'lib/index.js': '46bdc35d1d5778119dd468614241c6d349ebaf8566cc4ab2d5aff7ff7b786cc8',
     'lib/artifact-track.js': '1b7ecde22206c3aa94a687ffb77bfa9afe57a8e019105126299a8d8b93552392',
-    'lib/client.js': '78aadb9f47a10cb2a18cf0d42a3f770ee2c316388af73b97157facbb0ca7e700',
+    'lib/client.js': '56f94f3a7adcaf659805aefa88ba6457b3e96c7760c6b9979d1fe61872a0a073',
   },
 }
 

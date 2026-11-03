@@ -54,10 +54,10 @@
 3. 重新生成会真实触发一轮 AI 执行（消耗模型调用、可能改动工作区），这是功能语义，使用前有提示。
 4. 负 key 预快照清单参与共享回收，被裁剪后同样不可再作为回退点（与正常清单一致）。
 
-## 实现状态核对（v0.19.1-any.9）
+## 实现状态核对（v0.19.1-any.10）
 
-对着真实宿主数据（`app.asar` 里的类型声明、`~/.dsh/sessions/…/session.v4.jsonl.zstd` 里的真实事件）
-核对了一遍，结论如下。
+对着真实宿主数据（`app.asar` 里的类型声明与实现、`~/.dsh/sessions/…/session.v4.jsonl.zstd` 里的真实事件）
+逐条核对，结论如下。
 
 **已按实测修正**
 
@@ -67,16 +67,33 @@
 - 标记事件的 `sourceEventSeqs` 是**事件顶层字段**（`append` 的第三个参数原样落盘），不在
   `event.data` 里；宿主还会把连续区间压成嵌套数组（实测 `"sourceEventSeqs":[[585,587],589]`）。
   统一走 `citedSeqsOf()` 展平取最小 seq。
-- `executeRegenerate` 与 `executeRegenSwitch` 中断在飞的回复后都要 `dropPendingSteering()`，
-  否则被中断那轮残留的 steering 会被随后的 `followup` 认领（与 `/rewind` 对齐）。
+- **`data.op` 永远不会落盘**：宿主只持久化 `data` 的 content/source/role/id（真实日志核对：
+  1027 + 6354 行里 0 条事件带 `data.op`）。因此版本模型改用**命令事件**判定：`command/run`
+  记 `name`、`command/done` 记 `sourceEventSeq`，配对即可知道哪些遮蔽标记是 `/regen` 写的。
+  真实日志验证：regen 标记 #42 判为 regen，`/rewind` 标记 #597 不误判。
+- 客户端 `rewindCutsOf()` 原先只认引擎命令（`rewind-plugin`/`rewind`），`/regen` 造成的遮蔽
+  在界面上算不出区间 —— 这就是「重新生成后上面的记录还在」的直接原因。现在两种命令都认。
+- 助手回复行在宿主里是 `assistant-step`，其 `data` 是
+  `{status,turn,step,blocks,time,usage?,finalNode?}`，**没有 `data.seq`/`data.messageId`**；
+  messageId 与 seq 都在 `data.finalNode` 上。早先按 `kind==='assistant'` + `data.messageId`
+  找，真实会话里永远匹配不到 → 按钮解析不出目标 seq。
+- `executeRegenerate` 中断在飞的回复后要 `dropPendingSteering()`，否则被中断那轮残留的
+  steering 会被随后的 `followup` 认领（与 `/rewind` 对齐）。
 
-**尚未在真机验证（需要一次真实点击 + 翻会话日志）**
+**宿主能力边界（不是本插件的缺陷）**
 
-- 版本历史/版本切换依赖自定义字段 `event.data.op === "regenerate"`。宿主是否把消息对象上的
-  `data` 原样落盘尚未确认；若不落盘，`/regen list` 会一直显示「没有记录」、`/regen v<N>`
-  会答「暂不支持切回原始轮」。确认方法：点一次 ↻，再看日志里该标记事件是否带 `data.op`。
-- `/regen v<N>` 仍以被遮蔽区间的起点（`cited[0]`）作为回退目标；该 seq 若已被自己的标记
-  遮蔽，`planRewind` 会以 `not-on-surface` 拒绝。版本切换的定位方式需要按 marker 区间重做。
+- `SurfaceOp = 'append' | { op:'replace'; startSeq; endSeq }`，而宿主应用替换是
+  `state.nodes.splice(startIdx, endIdx-startIdx+1, plan.seq)`：被遮蔽的旧节点**永久**离开
+  surface，没有任何操作能把它们插回去。
+  ⇒ **「切回旧版本并重新显示旧回答」在宿主层面不可实现**，不是缺 UI。
+- 能实现的「切换」语义是**回到该版本的回退点重新执行**（等价于一次 regenerate）。
+  `/regen v<N>` 现在走这条路径；`v<total>`（原始轮）如实报「宿主不可恢复」。
+- 客户端在助手行动作槽渲染 `‹ N/M ›`（`regen-versions`，数据来自新增的 `versions` RPC 端点），
+  仅当该提示词确实有多个版本时出现。
+
+**仍待真机验证**
+
+- `versions` RPC 与 `‹ N/M ›` 控件需要在重启后点一次 ↻ 才能看到（宿主每个进程只加载一次插件）。
 
 ## 许可说明
 
