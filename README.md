@@ -147,10 +147,10 @@ node scripts\verify.mjs "<包目录>"        # 检查任意解包目录
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `lib/index.js` | `f81276ba0b42c8a1c17f585fab3ce13ab548e5ecabd3c118c58eefae5737dc85` |
-| `lib/artifact-track.js` | `d3e5da11b712bf550bdbc2b033f465cca2c69201a6942b55c114d78098b312bf` |
-| `lib/client.js` | `dd96698018c02b89a3b1e2b999655ebd5681640e9c70b149014d0a581354e74e` |
-| `dist/dsh-any-rollback-0.19.1-any.15.tgz` | `7382da54a07d4f1dbcbe6353a3f6146eb2b4546ca016794c110b2b3eb047a67e` |
+| `lib/index.js` | `46bdc35d1d5778119dd468614241c6d349ebaf8566cc4ab2d5aff7ff7b786cc8` |
+| `lib/artifact-track.js` | `1b7ecde22206c3aa94a687ffb77bfa9afe57a8e019105126299a8d8b93552392` |
+| `lib/client.js` | `f3df1086782c77f2feb95e182826e3b48ead7cc41b3cae6fae8822da78ee6ff0` |
+| `dist/dsh-any-rollback-0.19.1-any.16.tgz` | `5287e725b9198771356d9fa2df540fdf24704355ea4acd4406918b90869699dc` |
 
 装完**重启 DSH** 才会生效（插件宿主侧每个进程只加载一次）。重启后跑一个回合，
 确认 `~\.dsh\rewind-snapshots\<会话ID>\artifacts\manifests\` 下出现清单文件，且消息旁出现 ↶ 按钮。

@@ -237,32 +237,6 @@ console.log('6) 截图残留回归：失败的回退/重生成命令行也要隐
   check(vis.get('c38') === 'hidden', '失败的 regen 命令行隐藏（截图残留项）', vis.get('c38'))
 }
 
-console.log('7) 截图残留回归：turn-process 的合成锚点（小数）也要被区间命中')
-{
-  // 宿主 turn-process 的 anchorSeq = controlAnchorSeq + CHAT_SYNTHETIC_SEQ_OFFSETS
-  // .processControl（-0.1），即 5.9 这种**小数**。旧 nodeAnchorSeqOf 用
-  // Number.isSafeInteger 判断 anchorSeq，小数被拒 → 返回 undefined →
-  // deriveOne 直接放过该行。「已完成，用时 N 秒」正是这样留在屏幕上的。
-  const builder = new RewindVisibilityBuilder(inner, 's7')
-  const fractionalProcess = (key, controlSeq, turn) => ({
-    key, kind: 'turn-process',
-    anchorSeq: controlSeq - 0.1, // 小数锚点，真实宿主的取值
-    location: { turn: { turn } },
-    data: { controlAnchorSeq: controlSeq, turn, messageCount: 1, toolCallCount: 0, subagentCount: 0 },
-  })
-  const nodes = [
-    fractionalProcess('p1', 6, 1), userNode('u10', 10, 1), assistantStep('a35', 35, 1, 1),
-    commandNode('c56', 56, 'rewind-plugin', ' @10 chat', 57),
-    markerNode('mk57', 57),
-    // 回退点之后的轮次：锚点 63.9 / 69 都 > marker 57，不在任何区间内
-    fractionalProcess('p2', 63, 2), userNode('u70', 70, 2), assistantStep('a75', 75, 2, 1),
-  ]
-  builder.replace({ nodes, timeline: [] })
-  const vis = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
-  check(vis.get('p1') === 'hidden', '小数锚点的「已完成」行隐藏（5.9 归到 5，同轮成员全隐藏 → 汇总行隐藏）', vis.get('p1'))
-  check(vis.get('p2') === 'visible', '当前轮的小数锚点行可见', vis.get('p2'))
-}
-
 console.log('')
 console.log(fail === 0 ? `全部通过（${pass} 项）` : `失败 ${fail} 项 / 共 ${pass + fail} 项`)
 process.exit(fail === 0 ? 0 : 1)

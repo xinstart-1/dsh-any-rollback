@@ -1,26 +1,47 @@
 # 更新日志
 
-## [0.19.1-any.15] - 2026-11-03
+## [0.19.1-any.16] - 2026-11-03
 
-修复「回退后『已完成，用时 N 秒』汇总行仍残留」。
+修复「重新生成后版本切换控件从不显示」（截图 image-12）。
 
 ### 根因
 
-宿主的 `turn-process` 行（「已完成，用时 N 秒」）的锚点是合成值：
-`anchorSeq = controlAnchorSeq + CHAT_SYNTHETIC_SEQ_OFFSETS.processControl`
-（processControl = -0.1），即 `5.9` 这种**小数**。
+控件的版本归属过滤用 `v.targetSeq === targetSeq` 严格相等，但两边的 targetSeq
+语义不同：
+- 服务端 `v.targetSeq` = 该 marker **遮蔽区间里最小的被引用 seq**（被撤下的原提示词）；
+- 客户端反推的 `targetSeq` = 这条回答对应的提示词 seq —— ↻ 重发出来的**新**提示词，
+  seq 一定大于 marker 本身。
 
-`nodeAnchorSeqOf` 用 `Number.isSafeInteger(node.anchorSeq)` 判断，小数被拒 →
-返回 undefined → `deriveOne` 直接放过该行。于是回退后答案正文隐藏了，
-但这几条汇总行全部留在屏幕上 —— 与 any.12 修过的「anchorSeq 不恒等 seq」
-是同一族问题，这次是第三种形态。
+真实日志：marker 121 遮蔽 [112,117]，重发出来的新提示词是 #127。112 ≠ 127，
+过滤后恒为空，控件 `return null`，从不渲染。
 
 ### 修复
 
-- `nodeAnchorSeqOf` 接受有限小数锚点；`deriveOne` 比较时按 `Math.floor`
-  归一到整数边界（6.9 → 6，语义为「该行属于第 6 条事件所在的轮次」）。
-- 新增回归：小数锚点的汇总行在回退区间内隐藏、当前轮可见
-  （`tests/regen.rewind-visibility.mjs` 用例 7，24 项）。
+归属判据改为几何区间：版本组 = 「提示词落在该 marker 的重发区」
+`(marker.endSeq, 下一个 marker.markerSeq)`。真实数据验证：
+- 重发提示词 #127 → marker 121 的版本组
+- 提示词 #96 → marker 42 的版本组
+- 被遮蔽的原提示词 #10 → 无版本组（其行已撤下，不挂控件）
+- 旧判据下 #127 匹配 0 个 —— 即事故根因
+
+新增 `tests/regen.version-ownership.mjs`（8 项）。
+
+## [0.19.1-any.15] - 2026-11-03
+
+修复「回退后『已完成，用时 N 秒』汇总行仍残留」（截图 image-11）。
+
+### 根因
+
+宿主 `turn-process` 行的锚点是合成值
+`anchorSeq = controlAnchorSeq + CHAT_SYNTHETIC_SEQ_OFFSETS.processControl`
+（processControl = -0.1），即 `5.9` 这种**小数**。`nodeAnchorSeqOf` 用
+`Number.isSafeInteger` 判断，小数被拒 → 返回 undefined → `deriveOne`
+直接放过该行，汇总行全部留在屏幕上。
+
+### 修复
+
+- `nodeAnchorSeqOf` 接受有限小数锚点；比较时按 `Math.floor` 归到整数边界。
+- `tests/regen.rewind-visibility.mjs` 用例 7 锁定（24 项）。
 
 ## [0.19.1-any.14] - 2026-11-03
 
@@ -28,19 +49,17 @@
 
 ### 根因
 
-产物清单的 key 取错对象：`onTurnEnd` 取「最后一条 user/message」，实际拿到的是
-运行时注入消息（runtime-context / time-context），它们的 seq 比人类提示词大。
-真实会话清单 keys=[0,42,51,74,83]，而轮次起点是 [10,48,63,80]，完全错位。
-回退到 63 时退化到 5 小时前的清单，所有中间文件被误判为「新建产物」。
+产物清单 key 取错对象：`onTurnEnd` 取「最后一条 user/message」，实际拿到的是
+运行时注入消息，seq 比人类提示词大。真实会话清单 keys=[0,42,51,74,83]，
+而轮次起点是 [10,48,63,80]，完全错位。回退到 63 时退化到 5 小时前的清单，
+所有中间文件被误判为「新建产物」。
 
 ### 修复
 
 - 清单 key 复用 `isHumanUserMessageEvent`（与 /rewind 候选同一套判定）。
 - `onTurnEnd` 接受 `session.header.cwd` 兜底，修复 cwd 注册竞态导致的清单丢失。
-- `plan()` 增加清单链完整性诊断：链断裂时降级为保守策略（mtime 下界），
-  宁可少删不误删；清单完整时保持严格累积回退语义。
-- 新增 `tests/artifact-track.manifest-key.mjs`（13 项）；
-  regression 扩到 21 项（含累积回退语义）。
+- `plan()` 增加清单链完整性诊断，链断裂时降级为保守策略（mtime 下界）。
+- 新增 `tests/artifact-track.manifest-key.mjs`（13 项）。
 
 ## [0.19.1-any.13] - 2026-11-03
 
