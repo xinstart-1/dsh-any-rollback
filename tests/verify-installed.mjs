@@ -31,7 +31,9 @@ check(trackCode.includes('quarantinePath'), '5 目录整树隔离')
 
 console.log('regen 新功能:')
 check(hostCode.includes('async function executeRegenerate'), 'executeRegenerate')
-check(hostCode.includes('async function executeRegenSwitch'), 'executeRegenSwitch（版本切换）')
+// 版本切换不再走「追加标记改 surface」（宿主不可逆），改为按版本重新执行 + 客户端显示切换
+check(hostCode.includes('function regenerateMarkerSeqs'), '版本判定（command/run + command/done）')
+check(hostCode.includes('endpoint === "versions"'), 'versions RPC 端点')
 check(hostCode.includes('function regenVersionsOf'), '版本数据模型')
 check(hostCode.includes('name: "regen"'), '/regen 命令已注册')
 check(hostCode.includes('agent.followup(message)'), 'followup 重发调用')

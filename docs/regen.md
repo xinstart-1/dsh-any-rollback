@@ -80,16 +80,22 @@
 - `executeRegenerate` 中断在飞的回复后要 `dropPendingSteering()`，否则被中断那轮残留的
   steering 会被随后的 `followup` 认领（与 `/rewind` 对齐）。
 
-**宿主能力边界（不是本插件的缺陷）**
+**版本切换：纯客户端实现（v0.19.1-any.11）**
 
-- `SurfaceOp = 'append' | { op:'replace'; startSeq; endSeq }`，而宿主应用替换是
-  `state.nodes.splice(startIdx, endIdx-startIdx+1, plan.seq)`：被遮蔽的旧节点**永久**离开
-  surface，没有任何操作能把它们插回去。
-  ⇒ **「切回旧版本并重新显示旧回答」在宿主层面不可实现**，不是缺 UI。
-- 能实现的「切换」语义是**回到该版本的回退点重新执行**（等价于一次 regenerate）。
-  `/regen v<N>` 现在走这条路径；`v<total>`（原始轮）如实报「宿主不可恢复」。
-- 客户端在助手行动作槽渲染 `‹ N/M ›`（`regen-versions`，数据来自新增的 `versions` RPC 端点），
-  仅当该提示词确实有多个版本时出现。
+- 宿主的 surface 折叠（`SurfaceOp = 'append' | replace{startSeq,endSeq}`，应用时
+  `nodes.splice(startIdx, endIdx-startIdx+1, plan.seq)`）**只影响模型上下文**：
+  被遮蔽的旧事件从 surface 数组里被删除，但**浏览器端 Chat 节点仓库仍然保留这些行**
+  （本插件的 `installChatViewVisibility` 补丁存在的理由）。
+- ⇒ 「切回旧版本、重新显示旧回答」**不需要动宿主，也不需要重跑模型**：把
+  「整段隐藏 `[target, marker]`」改成「按选中版本隐藏其它版本区间」即可。
+  `RewindVisibilityBuilder.selectedVersion` + `annotateVersionCuts()` 实现这一点，
+  `‹ N/M ›` 点击后立刻重建视图（纯前端、瞬时）。
+- 模型上下文仍是最新版——这是有意的：否则模型会看到旧答案。
+- `/regen v<N>` 保留为「从第 N 版回退点重新执行」的命令形态；`v<total>`（原始轮）
+  如实报不可恢复（那条路径确实要改 surface）。
+- 版本数据来自 `versions` RPC：`{index, markerSeq, targetSeq, startSeq, endSeq}`，
+  全部从会话日志推导（`command/run` + `command/done` 配对判定 regen 标记），
+  不依赖任何不落盘的字段。
 
 **仍待真机验证**
 
