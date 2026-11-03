@@ -70,11 +70,13 @@ const check = (ok, label, detail = '') => {
 }
 
 // ── 宿主真实节点形状 ──
-const userNode = (key, seq, rpcId = 'u-' + seq) => ({
-  key, kind: 'user', anchorSeq: seq, location: { turn: { turn: 1 } },
+// turn 必须按真实轮次传入：宿主的 turn-process 汇总行靠 byTurn 判定
+// （同轮成员全隐藏则汇总行隐藏），成员被错误地塞进同一 turn 会让判定失真。
+const userNode = (key, seq, turn = 1, rpcId = 'u-' + seq) => ({
+  key, kind: 'user', anchorSeq: seq, location: { turn: { turn } },
   data: { seq, time: 0, content: [{ type: 'text', text: 'msg-' + seq }], source: { kind: 'user', rpcId } },
 })
-const resendNode = (key, seq) => userNode(key, seq, 'dsh-any-rollback')
+const resendNode = (key, seq, turn = 2) => userNode(key, seq, turn, 'dsh-any-rollback')
 // assistant-step：data 上没有 seq，seq 在 finalNode 上（事故根因之一）
 const assistantStep = (key, seq, turn, step) => ({
   key, kind: 'assistant-step', anchorSeq: seq,
@@ -183,6 +185,56 @@ console.log('4) 增量 apply 路径：新命令落盘后旧行立即隐藏')
   ], timeline: [] })
   const vis1 = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
   check(vis1.get('a14') === 'hidden', '回退落盘后：旧回答立即隐藏', vis1.get('a14'))
+}
+
+console.log('5) 截图残留回归：turn-process 汇总行必须随轮次一起隐藏')
+{
+  // 「已完成，用时 N 秒」= turn-process 行，锚点是轮次控制位（turn/start 或
+  // 最早的轮次事件），∈ cut 区间内 → 必须隐藏。截图里它曾整段留在上面。
+  const builder = new RewindVisibilityBuilder(inner, 's5')
+  const turnProcess = (key, seq, turn) => ({
+    key, kind: 'turn-process', anchorSeq: seq,
+    location: { turn: { turn } },
+    data: { controlAnchorSeq: seq, turn, messageCount: 1, toolCallCount: 0, subagentCount: 0 },
+  })
+  // 真实时间线：turn 1 被裸 regen [10,42] 撤下，turn 2 被 @48 回退 [48,57] 撤下，
+  // turn 3 是当前轮。
+  const nodes = [
+    turnProcess('p1', 6, 1), userNode('u10', 10, 1), assistantStep('a35', 35, 1, 1),
+    commandNode('c41', 41, 'regen', '', 42), markerNode('mk42', 42),
+    turnProcess('p2', 44, 2), resendNode('u48', 48, 2), assistantStep('a53', 53, 2, 1),
+    commandNode('c56', 56, 'rewind-plugin', ' @48 chat', 57),
+    markerNode('mk57', 57),
+    turnProcess('p3', 77, 3), userNode('u80', 80, 3), assistantStep('a85', 85, 3, 1),
+  ]
+  builder.replace({ nodes, timeline: [] })
+  const vis = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
+  check(vis.get('p1') === 'hidden', 'turn 1 的「已完成」行隐藏', vis.get('p1'))
+  check(vis.get('u10') === 'hidden', 'turn 1 的提示词隐藏', vis.get('u10'))
+  check(vis.get('a35') === 'hidden', 'turn 1 的回答隐藏', vis.get('a35'))
+  check(vis.get('p2') === 'hidden', 'turn 2 的「已完成」行隐藏', vis.get('p2'))
+  check(vis.get('p3') === 'visible', '当前轮 turn 3 的「已完成」行可见', vis.get('p3'))
+}
+
+console.log('6) 截图残留回归：失败的回退/重生成命令行也要隐藏')
+{
+  // 截图里的 `regen · fs is not defined`：command/done 是 error，没有 sourceEventSeq，
+  // 既不算 cut 源、也进不了「已执行」判定 —— 必须按名字 + error 一并隐藏。
+  const builder = new RewindVisibilityBuilder(inner, 's6')
+  const failed = (key, seq, name, args) => ({
+    key, kind: 'command', anchorSeq: seq, location: { turn: { turn: 1 } },
+    data: { kind: 'command', seq, time: 0, commandId: 'cmd-' + seq, name, args, outcome: { kind: 'error', text: 'fs is not defined' } },
+  })
+  const nodes = [
+    userNode('u10', 10),
+    failed('c38', 38, 'regen', ''),
+    assistantStep('a35', 35, 1, 1),
+    commandNode('c56', 56, 'rewind-plugin', ' @10 chat', 57),
+    markerNode('mk57', 57),
+  ]
+  builder.replace({ nodes, timeline: [] })
+  const vis = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
+  check(vis.get('c38') === 'hidden', '失败的 regen 命令行隐藏（截图残留项）', vis.get('c38'))
 }
 
 console.log('')
