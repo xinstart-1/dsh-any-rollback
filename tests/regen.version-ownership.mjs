@@ -31,8 +31,12 @@ const check = (ok, label, detail = '') => {
 {
   check(src.includes('下一个 marker 的 markerSeq'), 'switcher 源码含重发区判据注释')
   check(!src.includes('v.targetSeq === targetSeq) return true'), '旧的严格相等判据已移除')
-  const m = src.match(/const lo = Number\(v\.endSeq [\s\S]{0,120}Number\.MAX_SAFE_INTEGER/)
-  check(m !== null, '过滤条件使用 (endSeq, nextMarker) 区间')
+  // 区间判据：lo = endSeq+1，hi = 下一个「真实标记」的 markerSeq-1。
+  // 原始版（markerSeq=0）不是分组边界，求下一版时必须跳过它，否则原始版
+  // 之后那一页会把原始版自己的提示词排除掉。
+  check(src.includes('const lo = Number(v.endSeq'), '区间下界取 endSeq+1')
+  check(src.includes('const boundaries = ordered.filter((v) => Number(v.markerSeq) > 0)'), '分组边界排除原始版（markerSeq=0）')
+  check(src.includes('if (v.original === true) return true'), '原始版恒属于本组')
 }
 
 // ── 2) 用真实日志数据验证判据的行为 ──
