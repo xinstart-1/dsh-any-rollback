@@ -1,65 +1,56 @@
 # 更新日志
 
+## [0.19.1-any.17] - 2026-11-04
+
+优化回退失败提示的文案。
+
+原问题：`无法获取影响清单：user message at seq 127 is no longer in the model
+context (shadowed by compaction)` —— 内层是宿主英文原文没本地化；
+"shadowed by compaction" 说法错误（实际是被后续回退/重生成撤下）；
+也没告诉用户下一步该做什么。
+
+修复：
+- 宿主 `planRewind` 的 not-on-surface 文案改为准确描述 + 可操作建议。
+- 客户端 `previewOverRpc` 不再把 `error.message` 当界面文案，新增
+  `knownPreviewErrorText()` 按错误码（含旧宿主文案特征）映射到本地化文案，
+  英文原文只进日志；未知错误仍回退到宿主原文，不臆测。
+- 新增三语文案 5 条（`previewError.*`），新增测试 20 项。
+
+效果：「无法回退到 #127：这条消息已被后续的回退或重新生成撤下，不再属于
+模型看到的对话。请选一条仍在显示的消息。」
+
 ## [0.19.1-any.16] - 2026-11-03
 
-修复「重新生成后版本切换控件从不显示」（截图 image-12）。
+修复「重新生成后版本切换控件从不显示」。
 
-### 根因
+根因：归属过滤用 `v.targetSeq === targetSeq` 严格相等，但服务端 targetSeq 是
+marker 遮蔽区间里最小的被引用 seq（被撤下的原提示词），客户端反推的是 ↻ 重发
+出来的新提示词 seq —— 永远不相等，过滤恒为空，控件 `return null`。
 
-控件的版本归属过滤用 `v.targetSeq === targetSeq` 严格相等，但两边的 targetSeq
-语义不同：
-- 服务端 `v.targetSeq` = 该 marker **遮蔽区间里最小的被引用 seq**（被撤下的原提示词）；
-- 客户端反推的 `targetSeq` = 这条回答对应的提示词 seq —— ↻ 重发出来的**新**提示词，
-  seq 一定大于 marker 本身。
-
-真实日志：marker 121 遮蔽 [112,117]，重发出来的新提示词是 #127。112 ≠ 127，
-过滤后恒为空，控件 `return null`，从不渲染。
-
-### 修复
-
-归属判据改为几何区间：版本组 = 「提示词落在该 marker 的重发区」
-`(marker.endSeq, 下一个 marker.markerSeq)`。真实数据验证：
-- 重发提示词 #127 → marker 121 的版本组
-- 提示词 #96 → marker 42 的版本组
-- 被遮蔽的原提示词 #10 → 无版本组（其行已撤下，不挂控件）
-- 旧判据下 #127 匹配 0 个 —— 即事故根因
-
-新增 `tests/regen.version-ownership.mjs`（8 项）。
+修复：归属判据改为几何区间「提示词落在该 marker 的重发区」
+`(marker.endSeq, 下一个 marker.markerSeq)`。新增测试 8 项。
 
 ## [0.19.1-any.15] - 2026-11-03
 
-修复「回退后『已完成，用时 N 秒』汇总行仍残留」（截图 image-11）。
+修复「回退后『已完成，用时 N 秒』汇总行仍残留」。
 
-### 根因
+根因：宿主 turn-process 行的锚点是合成值 `controlAnchorSeq - 0.1`（小数），
+`nodeAnchorSeqOf` 用 `Number.isSafeInteger` 判断，小数被拒 → 返回 undefined →
+`deriveOne` 直接放过该行。
 
-宿主 `turn-process` 行的锚点是合成值
-`anchorSeq = controlAnchorSeq + CHAT_SYNTHETIC_SEQ_OFFSETS.processControl`
-（processControl = -0.1），即 `5.9` 这种**小数**。`nodeAnchorSeqOf` 用
-`Number.isSafeInteger` 判断，小数被拒 → 返回 undefined → `deriveOne`
-直接放过该行，汇总行全部留在屏幕上。
-
-### 修复
-
-- `nodeAnchorSeqOf` 接受有限小数锚点；比较时按 `Math.floor` 归到整数边界。
-- `tests/regen.rewind-visibility.mjs` 用例 7 锁定（24 项）。
+修复：接受有限小数锚点，比较时按 `Math.floor` 归到整数边界。
 
 ## [0.19.1-any.14] - 2026-11-03
 
-修复「回退时列出一大堆无关文件待删除」（截图 image-10）。
+修复「回退时列出一大堆无关文件待删除」。
 
-### 根因
+根因：产物清单 key 取错对象 —— `onTurnEnd` 取「最后一条 user/message」，实际
+拿到运行时注入消息，seq 比人类提示词大。真实会话清单 keys=[0,42,51,74,83]，
+而轮次起点是 [10,48,63,80]，完全错位 → 回退时退化到 5 小时前的清单。
 
-产物清单 key 取错对象：`onTurnEnd` 取「最后一条 user/message」，实际拿到的是
-运行时注入消息，seq 比人类提示词大。真实会话清单 keys=[0,42,51,74,83]，
-而轮次起点是 [10,48,63,80]，完全错位。回退到 63 时退化到 5 小时前的清单，
-所有中间文件被误判为「新建产物」。
-
-### 修复
-
-- 清单 key 复用 `isHumanUserMessageEvent`（与 /rewind 候选同一套判定）。
-- `onTurnEnd` 接受 `session.header.cwd` 兜底，修复 cwd 注册竞态导致的清单丢失。
-- `plan()` 增加清单链完整性诊断，链断裂时降级为保守策略（mtime 下界）。
-- 新增 `tests/artifact-track.manifest-key.mjs`（13 项）。
+修复：清单 key 复用 `isHumanUserMessageEvent`；`onTurnEnd` 接受
+`session.header.cwd` 兜底修复注册竞态；`plan()` 增加清单链完整性诊断，
+链断裂时降级为保守策略（mtime 下界）。新增测试 13 项。
 
 ## [0.19.1-any.13] - 2026-11-03
 
