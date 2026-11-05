@@ -100,7 +100,8 @@ console.log('用例 2：容差窗口内的同尺寸改写必须被记录')
     await readFile(join(root, 's', 'artifacts', 'manifests', `${String(20).padStart(12, '0')}.json`), 'utf8'),
   )
   const hash = manifest.files['out.txt'][2]
-  const blob = await readFile(join(root, 's', 'artifacts', 'blobs', hash), 'utf8').catch(() => '(missing)')
+  // 内容现在存进全局仓 <root>/_blobs/<前2位>/<hash>（跨会话共享，见 lib/blob-store.js）。
+  const blob = await readFile(join(root, '_blobs', hash.slice(0, 2), hash), 'utf8').catch(() => '(missing)')
   check(blob === 'BBBB', '清单指向改写后的内容', `实际: ${blob}`)
   await cleanup(base)
 }
@@ -113,7 +114,13 @@ console.log('用例 3：清单裁剪后回收不可达的内容缓存')
     await writeFile(join(cwd, 'clip.mp4'), Buffer.alloc(2048 + turn, turn))
     await tracker.onTurnEnd('s', turn * 10)
   }
-  const blobs = await readdir(join(root, 's', 'artifacts', 'blobs'))
+  // 全局仓按 <前2位>/<hash> 分片，逐分片统计 64hex 文件数。
+  const blobs = []
+  for (const shard of await readdir(join(root, '_blobs')).catch(() => [])) {
+    for (const name of await readdir(join(root, '_blobs', shard)).catch(() => [])) {
+      if (/^[0-9a-f]{64}$/.test(name)) blobs.push(name)
+    }
+  }
   const manifests = (await readdir(join(root, 's', 'artifacts', 'manifests'))).filter((f) => f.endsWith('.json'))
   check(blobs.length <= manifests.length, 'blob 数量不超过存活清单引用数', `blobs=${blobs.length} manifests=${manifests.length}`)
   check(blobs.length < 8, '历史 blob 已被回收', `仍有 ${blobs.length} 个`)

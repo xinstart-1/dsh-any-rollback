@@ -57,17 +57,40 @@
 **隔离区只移动、从不删除**：文件保留在磁盘上，去向记在 `index.json` 里，随时可人工取回。
 误删一个渲染了两小时的视频是不可接受的，所以这里宁可多占空间。
 
-### 4. 快照自动清理
+### 4. 快照存储与配额（v0.19.1-any.19 起）
 
-备份会占空间，插件按策略自动清理：可设置开关、闲置天数上限，也可随时查看状态或手动执行。
+> **背景：** 早期版本把每份内容按 `<会话ID>/artifacts/blobs/<sha256>` 各存一份，
+> 同一份 64 MiB 的视频在 3 个会话里就存 3 份。实测一个 `~/.dsh/rewind-snapshots/`
+> 长到 **42 GB**：103,784 个 blob 里只有 27,370 份唯一内容，**26.36 GiB 是纯跨会话重复**。
+> 而且自动清理默认关闭、按「闲置 30 天」判定，几天内产生的大量快照根本清不掉。
+
+现在内容一律进**全局内容寻址仓** `<root>/_blobs/<hash前2位>/<hash>`：所有会话共享同一份
+字节，相同内容全机只存一次；旧版每会话 blob 仍可读，通过 `compact` 逐步收编。清理策略
+默认开启，且增加了**总配额**（默认 8 GB）：
 
 | 命令 | 作用 |
 | --- | --- |
-| `/snapshot-auto-cleanup` | 查看当前状态 |
+| `/snapshot-auto-cleanup` | 查看状态（开关 / 闲置天数 / 总配额 / 压缩开关 / 已用空间） |
 | `/snapshot-auto-cleanup on\|off` | 启用 / 停用自动清理 |
 | `/snapshot-auto-cleanup max-age <天数>` | 设置闲置天数上限 |
-| `/snapshot-auto-cleanup run [-–apply]` | 预演，或真正执行清理 |
+| `/snapshot-auto-cleanup max-total <GB>` | 设置全局总配额（`0` = 不限，默认 8） |
+| `/snapshot-auto-cleanup compact [--apply]` | 预演 / 执行：旧 blob 收编进全局仓 + 全局可达性 GC + 按配额淘汰最旧会话 |
+| `/snapshot-auto-cleanup run [--apply]` | 清理 + 压缩：预演，或执行 |
 | `/snapshot-auto-cleanup run --current [--apply]` | 只清理当前会话的备份 |
+
+配额淘汰是**整组会话**为单位、按最旧优先；含隔离区 / `rescue/` / `.pending/` 的会话
+不会被淘汰（那些是用户尚未取回的原始字节）。删除前一律先预演。
+
+**存量数据一次性止血**（默认只读预演、加 `--apply --yes` 才执行，绝不碰隔离区）：
+
+```powershell
+node scripts/snapshot-doctor.mjs                     # 体检，报告可释放空间
+node scripts/snapshot-doctor.mjs --json             # 机器可读
+node scripts/snapshot-doctor.mjs --apply --dedup --gc --yes   # 跨会话硬链接去重 + 回收孤儿 blob
+```
+
+`--dedup` 用硬链接合并重复副本（先逐份校验 sha256），`--gc` 删除不被任何清单引用的
+孤儿 blob，两者都会写审计日志 `dedup-log.jsonl`，可在同目录人工核对。
 
 ### 5. 设置卡片
 
@@ -85,18 +108,23 @@
 | `artifactBaselineContent` | `false` | 是否缓存首次观测到的内容（更占空间，能还原插件未见过历史的大文件） |
 | `artifactExclude` | `node_modules,dist,build,out,coverage,__pycache__,venv,.venv,target` | 追踪时跳过的目录 |
 | `artifactKeepManifests` | `20` | 每个会话保留的清单份数 |
-| `autoCleanupEnabled` | `true` | 自动清理开关 |
+| `autoCleanupEnabled` | `true` | 自动清理开关（默认开启，防止再次无声涨到 40 GB） |
 | `autoCleanupMaxAgeDays` | `30` | 备份闲置多少天后可清理 |
+| `autoCleanupMaxTotalGb` | `8` | 全局总配额（GiB），`0` = 不限；超出时按最旧会话整组淘汰 |
+| `autoCleanupCompact` | `true` | 自动清理时是否顺带压缩（跨会话去重 + 全局 GC） |
 
 ## 数据放在哪里
 
 ```
-~/.dsh/rewind-snapshots/<会话ID>/
-  <消息序号>/            # 每条消息对应的文件备份
-  artifacts/
-    manifests/           # 每个回合边界一份工作区清单
-    quarantine/          # 回退时移出的文件
-    quarantine/index.json # 每个文件的原路径
+~/.dsh/rewind-snapshots/
+  _blobs/<前2位>/<sha256>   # 全局内容仓：所有会话共享，相同字节全机一份
+  <会话ID>/
+    <消息序号>/            # 每条消息对应的文件备份
+    artifacts/
+      manifests/           # 每个回合边界一份工作区清单
+      quarantine/          # 回退时移出的文件（唯一副本，清理绝不触碰）
+      quarantine/index.json # 每个文件的原路径
+      blobs/               # 旧版每会话副本，compact 后逐步清空
 ```
 
 备份目录与工作区分离（不是工作区的子目录）。删掉这个目录只会丢失回退能力，不会影响项目文件本身。

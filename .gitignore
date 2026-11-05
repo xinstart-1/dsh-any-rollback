@@ -9,3 +9,6 @@ Thumbs.db
 
 # agent scratch state
 .dsh-tmp/
+
+# local investigation scratch (asar dumps, probe scripts) — not part of the package
+scratch/

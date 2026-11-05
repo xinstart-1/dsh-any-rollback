@@ -49,12 +49,13 @@ var ENGINE_COMMANDS = new Set([ENGINE_COMMAND, LEGACY_ENGINE_COMMAND]);
 var REGEN_COMMAND = "regen";
 var RESEND_RPC_ID = "dsh-any-rollback";
 var EMPTY_NODES = [];
+var rewindLog = { info() {}, warn() {}, error() {} };
 var __publicField = (obj, key, value) => { obj[key] = value; return value };
 `
 const helpers = [
   'targetSeqOfArgs', 'isPreviewCommand', 'isCandidateCommand',
-  'rewindCutsOf', 'bareRegenTargetOf', 'annotateVersionCuts',
-  'isAnchorVisibleInCut', 'turnOf', 'changed', 'hidden',
+  'rewindCutsOf', 'bareRegenTargetOf',
+  'turnOf', 'changed', 'hidden',
   'nodeAnchorSeqOf', 'chatNodesOf',
 ].map(grab).join('\n')
 const factory = new Function(
@@ -108,7 +109,7 @@ const inner = {
 
 console.log('1) 事故复现：11:38 的回退后，08:01 的回答必须消失')
 {
-  const builder = new RewindVisibilityBuilder(inner, 's1')
+  const builder = new RewindVisibilityBuilder(inner)
   // 全量节点 = 真实会话在浏览器节点仓库里的完整集合（宿主 surface 已裁剪，
   // 但客户端仓库保留旧行 —— 这正是本层的存在理由）
   const nodes = [
@@ -138,9 +139,9 @@ console.log('1) 事故复现：11:38 的回退后，08:01 的回答必须消失'
   check(vis.get('c41') === 'hidden', 'regen 命令节点隐藏', vis.get('c41'))
 }
 
-console.log('2) 切到 v1：08:01 之前的原始轮重新可见')
+console.log('2) 切到第 1 页（原始版）：原始轮重新可见，重生成出来的内容隐藏')
 {
-  const builder = new RewindVisibilityBuilder(inner, 's2')
+  const builder = new RewindVisibilityBuilder(inner)
   const nodes = [
     userNode('u10', 10),
     assistantStep('a35', 35, 1, 2),
@@ -150,21 +151,19 @@ console.log('2) 切到 v1：08:01 之前的原始轮重新可见')
     assistantStep('a53', 53, 2, 1),
   ]
   builder.replace({ nodes, timeline: [] })
-  // fixture 只有一次 regen（cut = [10,42]），#53 在区间外、未被撤下 → 保持可见
-  builder.setSelectedVersion(1)
+  // 版本切换功能已移除：永远只显示最新版。
+  // 遮蔽区间 [10,42] 内是被撤下的旧内容 → 隐藏；marker 之后追加的内容 → 可见。
   const vis = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
-  check(vis.get('u10') === 'visible', '切到 v1：提示词 #10 可见', vis.get('u10'))
-  check(vis.get('a35') === 'visible', '切到 v1：回答 v1 可见', vis.get('a35'))
-  check(vis.get('a53') === 'visible', '区间外的后续内容不受版本选择影响', vis.get('a53'))
-  // 复位到最新视图
-  builder.setSelectedVersion(void 0)
-  const vis2 = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
-  check(vis2.get('a35') === 'hidden', '复位：回答 v1 重新隐藏', vis2.get('a35'))
+  check(vis.get('u10') === 'hidden', '原始提示 #10 隐藏', vis.get('u10'))
+  check(vis.get('a35') === 'hidden', '被撤下的原始回答 #35 隐藏', vis.get('a35'))
+  check(vis.get('u48') === 'visible', '重发的提示词 #48 可见', vis.get('u48'))
+  check(vis.get('a53') === 'visible', '重生成的回答 #53 可见', vis.get('a53'))
+  check(builder.cuts.length === 1, '一个遮蔽区间', String(builder.cuts.length))
 }
 
 console.log('3) 无任何回退/重生成的普通会话：一切可见')
 {
-  const builder = new RewindVisibilityBuilder(inner, 's3')
+  const builder = new RewindVisibilityBuilder(inner)
   const nodes = [userNode('u1', 10), assistantStep('a1', 14, 1, 1)]
   builder.replace({ nodes, timeline: [] })
   const vis = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
@@ -173,7 +172,7 @@ console.log('3) 无任何回退/重生成的普通会话：一切可见')
 
 console.log('4) 增量 apply 路径：新命令落盘后旧行立即隐藏')
 {
-  const builder = new RewindVisibilityBuilder(inner, 's4')
+  const builder = new RewindVisibilityBuilder(inner)
   const nodes = [userNode('u10', 10), assistantStep('a14', 14, 1, 1)]
   builder.replace({ nodes, timeline: [] })
   const vis0 = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
@@ -191,7 +190,7 @@ console.log('5) 截图残留回归：turn-process 汇总行必须随轮次一起
 {
   // 「已完成，用时 N 秒」= turn-process 行，锚点是轮次控制位（turn/start 或
   // 最早的轮次事件），∈ cut 区间内 → 必须隐藏。截图里它曾整段留在上面。
-  const builder = new RewindVisibilityBuilder(inner, 's5')
+  const builder = new RewindVisibilityBuilder(inner)
   const turnProcess = (key, seq, turn) => ({
     key, kind: 'turn-process', anchorSeq: seq,
     location: { turn: { turn } },
@@ -220,7 +219,7 @@ console.log('6) 截图残留回归：失败的回退/重生成命令行也要隐
 {
   // 截图里的 `regen · fs is not defined`：command/done 是 error，没有 sourceEventSeq，
   // 既不算 cut 源、也进不了「已执行」判定 —— 必须按名字 + error 一并隐藏。
-  const builder = new RewindVisibilityBuilder(inner, 's6')
+  const builder = new RewindVisibilityBuilder(inner)
   const failed = (key, seq, name, args) => ({
     key, kind: 'command', anchorSeq: seq, location: { turn: { turn: 1 } },
     data: { kind: 'command', seq, time: 0, commandId: 'cmd-' + seq, name, args, outcome: { kind: 'error', text: 'fs is not defined' } },

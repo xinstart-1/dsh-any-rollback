@@ -1,6 +1,8 @@
 // 用真实会话日志验证宿主侧版本模型：从 command/run + command/done 判定哪些标记是 regen 产生的。
 // 关键：真实落盘里没有 data.op，所以必须能从命令事件正确区分 regen / rewind 标记。
 import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 
 function decompressAll(buf) {
@@ -40,7 +42,9 @@ const SESSIONS = [
   ['session-0a61f77f（真实点 ↻ 的那次 regen）', 'session-0a61f77f-9f7f-4211-84ac-1422c6f87db8'],
   ['session-d7f7d49f（/rewind 产生的标记）', 'session-d7f7d49f-fa77-4462-9355-93ce4fb62812'],
 ]
-const root = 'C:/Users/xx106/.dsh/sessions/--C-Data-Project-dsh-forks-dsh-rollback--'
+// 用 homedir() 拼路径，不再硬编码某台机器的用户名；日志被清理/在 CI 上不
+// 存在时按 runner 约定打印 SKIP 并 0 退出（而不是 exit 1 假失败）。
+const root = join(homedir(), '.dsh', 'sessions', '--C-Data-Project-dsh-forks-dsh-rollback--')
 
 let pass = 0
 let fail = 0
@@ -51,7 +55,15 @@ const check = (ok, label, detail = '') => {
 
 for (const [label, dir] of SESSIONS) {
   console.log(`\n### ${label}`)
-  const text = decompressAll(await readFile(`${root}/${dir}/session.v4.jsonl.zstd`))
+  let raw
+  try {
+    raw = await readFile(join(root, dir, 'session.v4.jsonl.zstd'))
+  } catch (error) {
+    console.log(`SKIP: 该会话日志不存在或不可读（${error?.code ?? 'ENOENT'}）：${join(root, dir)}`)
+    console.log('（这是对真实历史日志的交叉验证，fixture 不在本机时跳过，不算失败）')
+    process.exit(0)
+  }
+  const text = decompressAll(raw)
   const events = text.split('\n').filter(Boolean).map((line) => { try { return JSON.parse(line) } catch { return null } }).filter(Boolean)
 
   const dshMarkers = events.filter((e) => e.type === 'user/message' && e.data?.source?.kind === 'dsh-rewind')

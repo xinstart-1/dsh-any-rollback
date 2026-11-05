@@ -135,7 +135,8 @@ console.log('用例 7：finishRestore 不再用 size 复用摘要')
   if (hash === null) {
     check(true, '无法确认时写 null（下次边界重新计算）')
   } else {
-    const blob = await readFile(join(root, 's', 'artifacts', 'blobs', hash), 'utf8')
+    // 内容在全局仓 <root>/_blobs/<前2位>/<hash>（跨会话共享）。
+    const blob = await readFile(join(root, '_blobs', hash.slice(0, 2), hash), 'utf8')
     check(blob === 'AAAA', '记录的摘要与实际内容一致', blob)
   }
   await done(base)

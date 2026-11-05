@@ -44,17 +44,20 @@ console.log('2) 客户端：按错误码映射成本地化文案')
 {
   const fn = grab(clientSrc, 'knownPreviewErrorText')
   const t = (k, p) => `[${k}${p && p.seq !== undefined ? ' seq=' + p.seq : ''}]`
-  const known = new Function('t', fn + '\nreturn knownPreviewErrorText')(t)
+  // t 现在是显式第 3 个参数：该函数在模块顶层，而 t 是 apply() 里的局部变量，
+  // 早先裸调 t() 会抛 ReferenceError（界面显示「无法获取影响清单：t is not defined」）。
+  const known = new Function(fn + '\nreturn knownPreviewErrorText')()
+  const call = (error, seq) => known(error, seq, t)
 
-  check(known({ code: 'rewind/not-on-surface', message: 'x' }, 127) === '[previewError.notOnSurface seq=127]',
+  check(call({ code: 'rewind/not-on-surface', message: 'x' }, 127) === '[previewError.notOnSurface seq=127]',
     '错误码命中 notOnSurface')
-  check(known({ message: 'user message at seq 127 is no longer in the model context (shadowed by compaction)' }, 127) === '[previewError.notOnSurface seq=127]',
+  check(call({ message: 'user message at seq 127 is no longer in the model context (shadowed by compaction)' }, 127) === '[previewError.notOnSurface seq=127]',
     '旧宿主英文文案也能兜底映射')
-  check(known({ code: 'rewind/not-a-user-message', message: 'x' }, 5) === '[previewError.notUserMessage]',
+  check(call({ code: 'rewind/not-a-user-message', message: 'x' }, 5) === '[previewError.notUserMessage]',
     '非用户消息 → notUserMessage')
-  check(known({ code: 'rewind/invalid-index', message: 'x' }, 9) === '[previewError.invalidTarget]',
+  check(call({ code: 'rewind/invalid-index', message: 'x' }, 9) === '[previewError.invalidTarget]',
     '非法目标 → invalidTarget')
-  check(known({ code: 'rewind/failed', message: 'boom' }, 3) === undefined,
+  check(call({ code: 'rewind/failed', message: 'boom' }, 3) === undefined,
     '未知错误不臆测，交回调用方用宿主原文')
 }
 
@@ -62,9 +65,10 @@ console.log('3) 客户端：previewOverRpc 不再把宿主英文原文当界面�
 {
   check(!/return \{ kind: "error", text: result\.error\.message \}/.test(clientSrc),
     '已改为先查本地化映射')
-  check(/knownPreviewErrorText\(result\.error, seq\)/.test(clientSrc), '调用本地化映射')
+  check(/knownPreviewErrorText\(result\.error, seq, translate\)/.test(clientSrc), '调用本地化映射（显式传 translate）')
   check(/previewError\.invalidResponse/.test(clientSrc), '非法响应用本地文案')
   check(/previewError\.unavailable/.test(clientSrc), 'RPC 不可用用本地文案')
+  check(/previewOverRpc\(connection, sessionId, seq, t\)/.test(clientSrc), 'apply 里把 t 传进 previewOverRpc')
 }
 
 console.log('4) 三语齐全（每个键都必须有 en/zh/ja 三条）')
