@@ -1,5 +1,54 @@
 # 更新日志
 
+## [0.19.1-any.26] - 2026-11-05
+
+**回退后「处理失败」汇总行不再残留**：回退几次就留几行，回退 4 次就是 4 行。
+
+### 现象（截图 image-21）
+
+对话里连续 4 轮都失败（前 3 轮 400 INVALID_REQUEST，第 4 轮
+`UNSUPPORTED_REASONING_EFFORT`），用户每次失败后点 ↶ 回退到上一条提示词再重试。
+回退后旧回答正文确实消失了，但**每一轮的「处理失败」汇总行都留在屏幕上**，
+一路累积到 4 行；最后一行「本轮运行失败」才是当前轮的。
+
+真实会话 `session-b13d98ce`（工作区 `dsh-files-fallback`）：
+turn 1 失败 → ↶ `@11` → turn 2 失败 → ↶ `@29` → turn 3 失败 → ↶ `@46` → turn 4 失败。
+
+### 根因
+
+遮蔽区间是 `[target, marker]`，`target` 是人类消息的 seq。而宿主
+`turn-process` 汇总行（「处理失败」/「已完成，用时 N 秒」）的锚点是**轮次起点**
+（`turn/start.seq - 0.1`），比 `target` 更早 → 落在区间之外 → `deriveOne` 放过它。
+
+原本有一条兜底：`deriveTurnProcess` 在「同轮成员全隐藏」时隐藏汇总行。但宿主的
+`request-prompt` / `system-prompt` 节点锚点也是**轮次起点**
+（`requestPromptAnchor`: step 1 → `turn.start.seq`），同样在区间之外，于是兜底
+永远判定「还有成员可见」→ 汇总行不隐藏。
+
+这与 any.15 修的小数锚点是同一族问题：**遮蔽区间以人类消息为起点，而合成行/
+提示卡锚在更早的轮次起点**，区间天然套不住它们。
+
+### 修复
+
+`deriveTurnProcess` 增加一条**轮次区间判据**：先算出该轮的 `[turn/start.seq,
+turn/end.seq]`（`turnSpanOf`），只要某个 cut 的 `target` 落在这个区间里，就说明
+**整轮已被撤下**，汇总行直接隐藏（`turnWithdrawnBy`）。保留原有的「同轮成员全隐藏」
+兜底作为第二道判据。
+
+| 位置 | 改动 |
+| --- | --- |
+| `lib/client.js` `RewindVisibilityBuilder` | 新增 `turnSpanOf(turn)`（起点取 `controlAnchorSeq`，终点取 `turn-tail.data.seq`）与 `turnWithdrawnBy(turn, cuts)` |
+| `lib/client.js` `deriveTurnProcess` | 整轮被撤下 → 立即 `hidden(base)`，不再依赖同轮成员是否全隐藏 |
+
+### 测试
+
+`tests/regen.rewind-visibility.mjs` 新增用例 6（5 项），用截图里的真实轮次形状
+（4 轮 + 3 次回退 + 每轮一张锚在轮次起点的提示卡）钉死结果。把 `lib/client.js`
+回退到 any.25 后该用例 3 项变红（turn 1/2/3 的汇总行仍可见），确认钉住的是真实
+缺陷而非镜像实现。
+
+全部 15 个测试文件：14 通过 / 1 跳过 / 0 失败。`scripts/verify.mjs` 全项一致。
+
 ## [0.19.1-any.25] - 2026-11-05
 
 **回退时总是覆盖输入框**：输入框里已有内容时，也会用被撤回的那句话替换。

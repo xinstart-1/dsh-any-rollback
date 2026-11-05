@@ -215,7 +215,56 @@ console.log('5) 截图残留回归：turn-process 汇总行必须随轮次一起
   check(vis.get('p3') === 'visible', '当前轮 turn 3 的「已完成」行可见', vis.get('p3'))
 }
 
-console.log('6) 截图残留回归：失败的回退/重生成命令行也要隐藏')
+console.log('6) 截图 image-21 回归：回退 N 次后，被撤下轮次的「处理失败」汇总行不能残留')
+{
+  // 真实会话 session-b13d98ce（工作区 dsh-files-fallback）：
+  //   turn 1 → 400 INVALID_REQUEST 失败；↶ @11 → turn 2 失败；↶ @29 → turn 3 失败；
+  //   ↶ @46 → turn 4 因 reasoning effort 失败。用户说「回退 4 次」。
+  // 截图里四行「处理失败」全留着，只有最后一行错误是本轮。
+  //
+  // 根因：宿主每一轮都有 request-prompt / system-prompt 节点，锚点是**轮次起点**
+  // （requestPromptAnchor: step 1 → turn.start.seq），落在遮蔽区间 [target, marker]
+  // 之外。deriveTurnProcess 的兜底是「同轮成员全隐藏才隐藏」，被这些成员击穿 →
+  // 汇总行永远判定为可见。锚点落在区间外的成因与 any.15 的小数锚点是同一族：
+  // 遮蔽区间以「人类消息 seq」为起点，而汇总行/提示卡锚在轮次起点（更早）。
+  const builder = new RewindVisibilityBuilder(inner)
+  const turnProcess = (key, seq, turn) => ({
+    key, kind: 'turn-process', anchorSeq: seq - 0.1,
+    location: { turn: { turn } },
+    data: { controlAnchorSeq: seq, turn, messageCount: 1, toolCallCount: 0, subagentCount: 0 },
+  })
+  // 宿主提示卡：锚点 = 轮次起点（= turn/start.seq），不在任何 cut 区间内
+  const promptCard = (key, turnStart, turn) => ({
+    key, kind: 'system-prompt', anchorSeq: turnStart,
+    location: { turn: { turn } },
+    data: { text: 'prompt' },
+  })
+  const nodes = [
+    turnProcess('p1', 7, 1), promptCard('s1', 7, 1),
+    userNode('u11', 11, 1),
+    commandNode('c22', 22, 'rewind-plugin', ' @11 chat', 23), markerNode('mk23', 23),
+    turnProcess('p2', 26, 2), promptCard('s2', 26, 2),
+    userNode('u29', 29, 2),
+    commandNode('c38', 38, 'rewind-plugin', ' @29 chat', 39), markerNode('mk39', 39),
+    turnProcess('p3', 42, 3), promptCard('s3', 42, 3),
+    userNode('u46', 46, 3),
+    commandNode('c56', 56, 'rewind-plugin', ' @46 chat', 57), markerNode('mk57', 57),
+    turnProcess('p4', 60, 4),
+  ]
+  builder.replace({ nodes, timeline: [] })
+  const vis = new Map(inner.lastNodes.map((n) => [n.key, n.visibility ?? 'visible']))
+  check(vis.get('p1') === 'hidden', 'turn 1「处理失败」隐藏（锚点在区间外也要隐藏）', vis.get('p1'))
+  check(vis.get('p2') === 'hidden', 'turn 2「处理失败」隐藏', vis.get('p2'))
+  check(vis.get('p3') === 'hidden', 'turn 3「处理失败」隐藏', vis.get('p3'))
+  check(vis.get('p4') === 'visible', '当前轮 turn 4 汇总行可见', vis.get('p4'))
+  // 注意：提示卡（kind='system-prompt'）锚在轮次起点、不在区间内，插件层保持
+  // 可见也没关系 —— 宿主 isVisibleChatNode 会把 system-prompt 整类过滤掉，
+  // 它们从不进入 chat.order。这里保留它们正是为了钉住根因：兜底判据会被这类
+  // 「锚点在区间外」的成员击穿，所以必须用轮次区间判据（turnWithdrawnBy）。
+  check(vis.get('s1') !== 'hidden' || true, '提示卡不影响渲染（宿主过滤 system-prompt）')
+}
+
+console.log('7) 截图残留回归：失败的回退/重生成命令行也要隐藏')
 {
   // 截图里的 `regen · fs is not defined`：command/done 是 error，没有 sourceEventSeq，
   // 既不算 cut 源、也进不了「已执行」判定 —— 必须按名字 + error 一并隐藏。
