@@ -29,7 +29,8 @@ workspace restored to how it looked at that moment.
 
 Every user message has a ↶ button. It withdraws everything after that message from the conversation view
 (the session log stays append-only and fully auditable), and puts the withdrawn text back in the composer so
-you can edit and resend.
+you can edit and resend. **Whatever was already in the composer is replaced** (a brief notice says so), so
+rewinding to different messages always leaves the current withdrawn text in place.
 
 Commands work too:
 
@@ -157,10 +158,12 @@ Expected digests (SHA-256):
 
 | File | SHA-256 |
 | --- | --- |
-| `lib/index.js` | `46bdc35d1d5778119dd468614241c6d349ebaf8566cc4ab2d5aff7ff7b786cc8` |
-| `lib/artifact-track.js` | `1b7ecde22206c3aa94a687ffb77bfa9afe57a8e019105126299a8d8b93552392` |
-| `lib/client.js` | `c9baee70d4d1823ac9afaa7027ee43a8846539cb6520ff362ef8fe03a158a218` |
-| `dist/dsh-any-rollback-0.19.1-any.11.tgz` | `cbec5fb9dde733924fd2490158821548ec3dea3f9c77928f11540f9a0186f570` |
+| `lib/index.js` | `eba61cdff42870e65efe6460b8c6e6b90691a4b9133882d27c2d64e41e9c8946` |
+| `lib/artifact-track.js` | `a2ce62be39cf34aacf168ca197e6bc44c55944f716255a8cfac3b2c72fa0f977` |
+| `lib/client.js` | `dc85d3d331b442234513717097ba487b1d936c8972ac03f31a39fcecc94b8c30` |
+
+> The tarball digest changes with the README it contains (self-reference), so it is not
+> pinned here; take it from the actual file under `dist/` (`Get-FileHash` / `sha256sum`) or the Release asset page.
 
 **Restart DSH** after installing (the host half loads once per process). Then run one turn and confirm a
 manifest appeared under `~/.dsh/rewind-snapshots/<sessionId>/artifacts/manifests/` and the ↶ buttons show up.

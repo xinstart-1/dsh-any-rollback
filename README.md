@@ -24,7 +24,8 @@
 ### 1. 按消息回退对话
 
 每条用户消息旁有 ↶ 按钮。点它，这条消息之后的内容从对话视图上撤下（会话日志仍只追加、不删除，可追溯），
-输入框自动填回被撤回的那句话，改一改就能重新提问。
+输入框自动填回被撤回的那句话，改一改就能重新提问。**输入框里原有的内容会被替换**（并弹一句提示），
+这样连续回退到不同消息时，输入框里始终是当前这条被撤回的话。
 
 也可以直接用命令：
 
@@ -175,10 +176,12 @@ node scripts\verify.mjs "<包目录>"        # 检查任意解包目录
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `lib/index.js` | `221d74e8b5a921e939a5eb29bc3ad694e012ffdd77a2713e9daf44c64751be22` |
-| `lib/artifact-track.js` | `d3e5da11b712bf550bdbc2b033f465cca2c69201a6942b55c114d78098b312bf` |
-| `lib/client.js` | `d689c702a7095abfbcd983b52936f65a551bccc125e3a703548741df71167ac5` |
-| `dist/dsh-any-rollback-0.19.1-any.17.tgz` | `5e63ef517196df41def41b73e26340283373d99960ef9737cdf19a2780f4d0c9` |
+| `lib/index.js` | `eba61cdff42870e65efe6460b8c6e6b90691a4b9133882d27c2d64e41e9c8946` |
+| `lib/artifact-track.js` | `a2ce62be39cf34aacf168ca197e6bc44c55944f716255a8cfac3b2c72fa0f977` |
+| `lib/client.js` | `dc85d3d331b442234513717097ba487b1d936c8972ac03f31a39fcecc94b8c30` |
+
+> tarball 自身的摘要会随包内 README 变化（自引用），因此不写死在文档里；
+> 以 `dist/` 下实际文件为准（`Get-FileHash` / `sha256sum`），或直接对照 Release 附件页。
 
 装完**重启 DSH** 才会生效（插件宿主侧每个进程只加载一次）。重启后跑一个回合，
 确认 `~\.dsh\rewind-snapshots\<会话ID>\artifacts\manifests\` 下出现清单文件，且消息旁出现 ↶ 按钮。
