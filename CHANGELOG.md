@@ -62,13 +62,15 @@ cannot get property "webServer" without inject
 
 ### 测试
 
-新增 `tests/regen.rpc-route.mjs`（25 项）：
+新增 `tests/regen.rpc-route.mjs`（27 项）：
 
 1. 宿主侧必须用 `fetch.register`、路径在 `/api` 下、不再调用 `rpc.handle`；
 2. 客户端必须走 Fetch 路由、不再调用 `connection.rpc.call`；
 3. 前后端路径与 endpoint 名严格一致（客户端相对路径解析后等于宿主路径）；
 4. **用真实 cordis 复现宿主语义**：`rpc.handle` 必抛
-   `cannot get property "webServer" without inject`，且一条路由都注册不上。
+   `cannot get property "webServer" without inject`，且一条路由都注册不上；
+5. **正向证明**：同样的插件上下文里 `fetch.register` 能真正注册进路由表
+   （与第 4 段的「一条都注册不上」形成对照）。
 
 把 `lib/index.js` / `lib/client.js` 还原到 any.26 后，该测试 20 项变红，确认钉住
 的是真实缺陷。

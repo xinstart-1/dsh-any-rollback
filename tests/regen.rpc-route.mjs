@@ -147,6 +147,68 @@ console.log('4) 真实 cordis：rpc.handle 在第三方插件上下文必然抛�
   }
 }
 
+console.log('5) 真实 cordis：fetch.register 在同样的插件上下文里能注册成功（正向证明）')
+{
+  let Context
+  let Service
+  try {
+    const { pathToFileURL } = await import('node:url')
+    const entry = pathToFileURL(join(root, 'scratch', 'asar3', 'dsh', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js')).href
+    ;({ Context, Service } = await import(entry))
+  } catch {
+    console.log('  SKIP: 未找到解包的 cordis（scratch/asar3），跳过')
+  }
+  if (Context !== undefined) {
+    // 复刻真实的 fetch 注册表：registerFetchRoute 只往自己的 Map 里塞，
+    // 不碰 owner.webServer —— 所以第三方插件能用。
+    class ConnectionService extends Service {
+      constructor(ctx) {
+        super(ctx, 'connection')
+        this.fetchRoutes = new Map()
+      }
+      get fetch() {
+        const owner = this.ctx
+        return { register: (route) => this.registerFetchRoute(owner, route) }
+      }
+      registerFetchRoute(owner, route) {
+        return owner.effect(() => {
+          this.fetchRoutes.set(route.path, route)
+          return () => this.fetchRoutes.delete(route.path)
+        }, `fetch ${route.path}`)
+      }
+    }
+
+    const app = new Context()
+    app.plugin({ name: 'client-connection', apply(ctx) { new ConnectionService(ctx) } })
+
+    let threw
+    app.plugin({
+      name: 'rewind-probe-fetch',
+      inject: ['connection'],
+      apply(ctx) {
+        ctx.inject(['connection'], (scope) => {
+          try {
+            scope.connection.fetch.register({
+              path: '/api/dsh-rewind/rpc',
+              methods: ['POST'],
+              requestBody: 'buffered',
+              fetch: async () => new Response('{"ok":true}'),
+            })
+          } catch (error) {
+            threw = error
+          }
+        })
+      },
+    })
+    await new Promise((r) => setTimeout(r, 250))
+
+    check(threw === undefined, 'fetch.register 不抛错', threw?.message)
+    check(app.get('connection').fetchRoutes.has('/api/dsh-rewind/rpc'),
+      '路由真的注册进了表里（对比第 4 段一条都没有）',
+      JSON.stringify([...app.get('connection').fetchRoutes.keys()]))
+  }
+}
+
 console.log('')
 console.log(fail === 0 ? `全部通过（${pass} 项）` : `失败 ${fail} 项 / 共 ${pass + fail} 项`)
 process.exit(fail === 0 ? 0 : 1)
