@@ -1,5 +1,80 @@
 # 更新日志
 
+## [0.19.1-any.27] - 2026-11-06
+
+**回退弹窗报「无法获取影响清单：HTTP 405」**：点 ↶ 回退，影响清单永远出不来。
+
+### 现象（截图 image-22）
+
+回退弹窗里显示：
+
+```
+无法获取影响清单：transport failure for /dsh-rewind/preview: HTTP 405
+```
+
+「仅回退对话」这一项直接不可用 —— 因为影响清单要靠宿主 RPC 生成，而那个 RPC 根本没通。
+
+### 根因（宿主侧 RPC 通道从未注册）
+
+`lib/index.js` 用的是 `connection.rpc.handle('/dsh-rewind', handler)`。它的实现是：
+
+```js
+get rpc() {
+  const owner = this.ctx                     // ← connection 服务构造时的 ctx
+  return { handle: (channel, handler) => this.register(owner, channel, handler) }
+}
+register(owner, channel, handler) {
+  return owner.effect(() => owner.webServer.register(route), ...)   // ← 这里读 webServer
+}
+```
+
+`owner` 是 **connection 服务自己构造时的 ctx**（`client-connection` 插件的 ctx，
+它的 `inject` 只有 `["credentials"]`），没有注入 `webServer`。于是 `owner.webServer`
+读取直接抛：
+
+```
+cannot get property "webServer" without inject
+```
+
+这段又被我们自己的 `try/catch` 吞成一条 `logger.warn`，于是**静默失败**：
+路由从未注册，`POST /dsh-rewind/preview` 落到前端静态兜底路由 → HTTP 405。
+
+关键点：**第三方插件无法靠声明 inject 修好它**。`owner` 由宿主服务捕获，不是
+调用方的 ctx；在真实 cordis 里把插件的 `inject` 写成 `["connection", "webServer"]`
+也照样抛同样的错（`tests/regen.rpc-route.mjs` 第 4 段用真实 cordis 复现了这一点）。
+
+### 修复
+
+改用官方给第三方插件的扩展点 **exact Fetch 路由**（`dsh-context` 等插件即用此）：
+
+- 路径必须在 `/api` 下（`assertFetchRoute` 要求），由 Connection 的 `/api`
+  处理器先做 Host/Origin + 浏览器鉴权，再转给注册过的 exact 路由；
+- 插件自己的响应信封 `{ ok, value | error }` 与 connection 的 RPC 信封无关。
+
+| 位置 | 改动 |
+| --- | --- |
+| `lib/index.js` | 新增 `REWIND_RPC_PATH = "/api/dsh-rewind/rpc"` 与 `jsonResponse()`；`connection.rpc.handle` → `connection.fetch.register({ path, methods:["POST"], requestBody:"buffered", fetch })` |
+| `lib/client.js` | 新增 `RPC_PATH = "api/dsh-rewind/rpc"` 与 `hostRpc(endpoint, payload)`；`previewOverRpc` / `candidatesOverRpc` 改走 `fetch`，不再走 `connection.rpc.call` |
+| `lib/client.js` | 去掉不再使用的 `CHANNEL` 常量与 `connection` 形参 |
+
+保留 `REWIND_RPC_CHANNEL = "/dsh-rewind"`（`scripts/check-identity.mjs` 校验的
+稳定内部标识，不影响数据可读性）。
+
+### 测试
+
+新增 `tests/regen.rpc-route.mjs`（25 项）：
+
+1. 宿主侧必须用 `fetch.register`、路径在 `/api` 下、不再调用 `rpc.handle`；
+2. 客户端必须走 Fetch 路由、不再调用 `connection.rpc.call`；
+3. 前后端路径与 endpoint 名严格一致（客户端相对路径解析后等于宿主路径）；
+4. **用真实 cordis 复现宿主语义**：`rpc.handle` 必抛
+   `cannot get property "webServer" without inject`，且一条路由都注册不上。
+
+把 `lib/index.js` / `lib/client.js` 还原到 any.26 后，该测试 20 项变红，确认钉住
+的是真实缺陷。
+
+全部 16 个测试文件：15 通过 / 1 跳过 / 0 失败。`scripts/verify.mjs` 全项一致。
+
 ## [0.19.1-any.26] - 2026-11-05
 
 **回退后「处理失败」汇总行不再残留**：回退几次就留几行，回退 4 次就是 4 行。

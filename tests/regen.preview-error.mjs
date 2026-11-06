@@ -68,7 +68,11 @@ console.log('3) 客户端：previewOverRpc 不再把宿主英文原文当界面�
   check(/knownPreviewErrorText\(result\.error, seq, translate\)/.test(clientSrc), '调用本地化映射（显式传 translate）')
   check(/previewError\.invalidResponse/.test(clientSrc), '非法响应用本地文案')
   check(/previewError\.unavailable/.test(clientSrc), 'RPC 不可用用本地文案')
-  check(/previewOverRpc\(connection, sessionId, seq, t\)/.test(clientSrc), 'apply 里把 t 传进 previewOverRpc')
+  check(/previewOverRpc\(sessionId, seq, t\)/.test(clientSrc), 'apply 里把 t 传进 previewOverRpc')
+  // 回归：preview 走 /api 下的 exact Fetch 路由，不再走 connection.rpc.call。
+  // 后者在真实宿主里注册不上（owner 读 webServer 抛 inject 错误）→ HTTP 405。
+  check(!/connection\.rpc\.call\(/.test(clientSrc), '不再走 connection.rpc.call（宿主注册不上，会 405）')
+  check(/var RPC_PATH = "api\/dsh-rewind\/rpc"/.test(clientSrc), 'preview 走 /api 下的 exact Fetch 路由')
 }
 
 console.log('4) 三语齐全（每个键都必须有 en/zh/ja 三条）')
