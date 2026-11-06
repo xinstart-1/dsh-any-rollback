@@ -1,7 +1,7 @@
 {
   "name": "dsh-any-rollback",
-  "version": "0.19.1-any.29",
-  "description": "对话回退插件：回退到任意一条历史消息，并还原工作区文件（含命令产出的文件）· In-window conversation rewind with workspace file restore",
+  "version": "0.19.1-any.30",
+  "description": "瀵硅瘽鍥為€€鎻掍欢锛氬洖閫€鍒颁换鎰忎竴鏉″巻鍙叉秷鎭紝骞惰繕鍘熷伐浣滃尯鏂囦欢锛堝惈鍛戒护浜у嚭鐨勬枃浠讹級路 In-window conversation rewind with workspace file restore",
   "icon": "./assets/icon.svg",
   "keywords": [
     "deepseek-harness",
