@@ -1,5 +1,35 @@
 # 更新日志
 
+## [0.19.1-any.30] - 2026-11-06
+
+**回退后 `@路径` 恢复为引用 chip**，不再退化成蓝色纯文本。
+
+### 现象
+
+回退到一条带 `@path` 引用的消息后，输入框里填回的是**纯文本**：所有
+`@C:\...\file.ts` 都变成蓝色字，而不是可点开的引用 chip。再发出去时这些
+路径失去了「引用」语义（拖拽/打开/去重等能力全部失效）。
+
+### 根因
+
+回退用 `facade.setDraft(text)` 传了一个**裸字符串**。宿主的 `resolveDraftInput`
+把字符串一律当成 `{ text, references: [] }`，于是走纯文本分支：清空根节点、
+按字面字符重新追加段落。`@path` 因此只是普通文本。
+
+### 修复
+
+`setDraft` 本来就接受语义化文档，改为传 `{ text, references }`，且
+`references` 非空时走 `restoreDraft`，为每处出现重建一个 `ReferenceChipNode`。
+
+新增 `draftReferencesOf`：扫描消息文本里的 `@path` 与 `@"含空格的路径"`，
+产出带精确 `offset/length` 与 `source`/`ref`/`label`/`clipboardText`/`appearance`
+的引用；目录按结尾分隔符识别。
+
+**只接受像真实路径的 token**（盘符、UNC、POSIX 绝对路径），所以
+`foo@bar.com`、`@someone` 这类保持纯文本。没有引用时仍走原来的字符串分支。
+
+全部 18 个测试文件：17 通过 / 1 跳过 / 0 失败。`scripts/verify.mjs` 全项一致。
+
 ## [0.19.1-any.29] - 2026-11-06
 
 **快照布局改为「工作区 / 会话」两层**：跨会话归属检测不再扫描全部会话。
