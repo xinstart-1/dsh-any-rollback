@@ -1,5 +1,74 @@
 # 更新日志
 
+## [0.19.1-any.29] - 2026-11-06
+
+**快照布局改为「工作区 / 会话」两层**：跨会话归属检测不再扫描全部会话。
+
+### 背景
+
+快照根目录原来把每个会话平铺在根下：
+
+```
+rewind-snapshots/
+  <sessionId>/           ← 43 个会话全挤在根下
+```
+
+于是「同一工作区里还有哪些会话」只能靠**扫全部会话**回答。实测本机 43 个
+会话里，同一工作区最多 8 个 —— 其余都是完全无关的项目，跨会话归属检测
+（`foreignTouchedPaths` / `ownershipFor`）读了 **99% 无关数据**：219 份
+manifest / 66MB，其中同工作区只有 52 份 / 0.6MB。
+
+### 新布局
+
+```
+rewind-snapshots/
+  _blobs/                    全局内容寻址仓（保留名，不变）
+  ws-<12hex>/                一个工作区一个文件夹（key = sha256(规范化 cwd) 前 12 位）
+    workspace.json           记录真实 cwd，便于排查
+    <sessionId>/             会话目录（锚点组 + artifacts/ + format/store）
+  <sessionId>/               旧扁平布局：首次运行自动迁移进 ws-*/
+```
+
+### 实现要点
+
+| 位置 | 改动 |
+| --- | --- |
+| `lib/index.js` | `workspaceKeyOf` / `normalizeWorkspace` 推导工作区 key（与 artifact-track 的 `normalizeCwd` 语义一致，否则同一工作区会拆成两个目录） |
+| `lib/index.js` | `sessionDir()` 改为「已绑定 → `ws-*/<sid>`，未绑定 → 旧扁平路径」，因此**旧数据不迁移也能读** |
+| `lib/index.js` | 新增 `bindSession()`：绑定工作区并把旧扁平目录 `rename` 进去；迁移失败时**不记录绑定**，继续走旧路径（数据绝不丢） |
+| `lib/index.js` | 新增 `migrateFlatSessions()`：先从 `artifacts/owned.json`（回退到最新 manifest）读出 cwd，再归位；cwd 未知的目录留在原地 |
+| `lib/index.js` | 新增 `siblingSessionDirNames()`：同工作区的其他会话（**磁盘目录 ∪ 内存绑定**的并集 —— 只看磁盘会漏掉已绑定未落盘的会话） |
+| `lib/index.js` | `agent/created` 里**先** `migrateFlatSessions` + `bindSession`，再跑 `assertKnownStoreVersion` / `reconcileFormatVersion` / `ensureBaseline` |
+| `lib/artifact-track.js` | `dirOf()` 委托给宿主注入的 `sessionDirOf`（两套存储共用同一个会话目录，避免各自算路径错位） |
+| `lib/artifact-track.js` | `ownershipFor` / `record` / `foreignTouchedPaths` 改走 `siblingDirs()`；拿不到分组信息时退回「扫全部」 |
+| `lib/index.js` | `pruneStale` / `evictToQuota` / 配额会话列表支持两层布局（否则分层后配额淘汰会一个会话都看不到） |
+
+### 顺带修掉的三个真实缺陷
+
+1. **重启后已分层会话不登记**：`migrateFlatSessions` 原来只处理扁平目录，不登记
+   已在 `ws-*/` 下的会话。重启后 `sessionDir()` 会退回扁平路径（那里没数据）→
+   跨会话账本读不到 → 归属检测**静默失效**。现在迁移时先登记已有工作区目录。
+2. **`siblingSessionDirNames` 漏掉未落盘会话**：会话首次写盘前不创建目录，只看
+   磁盘会漏掉已绑定但还没落盘的兄弟会话。改为「磁盘 ∪ 内存绑定」并集。
+3. **`allSessionDirNames` 把散落文件当会话**：根目录下的 `dedup-log.jsonl` 没做
+   `isDirectory()` 校验，被当成一个会话，GC / prune / 跨会话扫描都去读不存在的目录。
+
+### 实测收益（真实数据副本，43 会话 / 11 工作区）
+
+- 迁移耗时 **519ms**，43 个会话全部正确归位，**43/43 可定位**（数据完好）
+- 跨会话扫描范围：**43 → 7 个会话**（收窄 83.7%）
+- `foreignTouchedPaths` 的 manifest 读取：**228 → 41 份（-82%）**，耗时 **1803ms → 685ms**
+
+### 测试
+
+新增 `tests/regen.workspace-layout.mjs`（28 项）：用真实 `SnapshotStore` 类在临时目录上
+验证分层目录名、同工作区兄弟枚举、旧目录迁移、cwd 未知时保留旧路径、幂等性，以及
+「两套存储共用 sessionDir」「agent/created 先绑定再 IO」的接线。
+
+回退到 any.28 后该测试直接失败（`store.bindSession is not a function`）。
+
+全部 18 个测试文件：17 通过 / 1 跳过 / 0 失败。`scripts/verify.mjs` 全项一致。
+
 ## [0.19.1-any.28] - 2026-11-06
 
 **影响清单超时**：回退弹窗显示「无法获取影响清单：preview request timed out」。
