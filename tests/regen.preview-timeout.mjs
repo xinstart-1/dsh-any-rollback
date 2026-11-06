@@ -64,10 +64,30 @@ console.log('1) 缓存机制存在且被 plan()/restore() 使用')
 console.log('2) 语义等价：缓存与否返回同样的 others')
 {
   // 用真实快照目录；没有就 SKIP
+  // 布局自 any.29 起是「工作区 / 会话」两层：会话目录可能直接位于根下
+  // （旧扁平布局）或位于 ws-<hash>/ 下（新布局），两者都要能枚举到。
   const snapRoot = join(homedir(), '.dsh', 'rewind-snapshots')
   let sessionDirs = []
   try {
-    sessionDirs = (await readdir(snapRoot, { withFileTypes: true })).filter((d) => d.isDirectory())
+    const roots = await readdir(snapRoot, { withFileTypes: true })
+    for (const dirent of roots) {
+      if (!dirent.isDirectory()) continue
+      if (dirent.name.startsWith('ws-')) {
+        // 新布局：工作区目录下的每个子目录是一个会话
+        const inner = await readdir(join(snapRoot, dirent.name), { withFileTypes: true }).catch(() => [])
+        for (const child of inner) {
+          if (!child.isDirectory()) continue
+          sessionDirs.push({
+            name: child.name,
+            dir: join(snapRoot, dirent.name, child.name),
+            workspace: dirent.name,
+          })
+        }
+        continue
+      }
+      if (dirent.name.startsWith('.')) continue
+      sessionDirs.push({ name: dirent.name, dir: join(snapRoot, dirent.name), workspace: undefined })
+    }
   } catch {
     console.log('  SKIP: 快照目录不可读，跳过真实数据对比')
   }
@@ -75,8 +95,12 @@ console.log('2) 语义等价：缓存与否返回同样的 others')
   if (sessionDirs.length > 0) {
     // self 取第一个有 owned.json 的会话（空目录没有可对比的 rel）
     let self = sessionDirs[0].name
+    let selfDir = sessionDirs[0].dir
+    // 按会话目录名找它的绝对路径（两层布局下不能再拼根路径）
+    const dirOf = new Map(sessionDirs.map((d) => [d.name, d.dir]))
     async function readOwned(id) {
-      try { return JSON.parse(await readFile(join(snapRoot, id, 'artifacts', 'owned.json'), 'utf8')) }
+      const dir = dirOf.get(id) ?? join(snapRoot, id)
+      try { return JSON.parse(await readFile(join(dir, 'artifacts', 'owned.json'), 'utf8')) }
       catch { return undefined }
     }
     async function normalizeCwd(cwd) {
@@ -86,11 +110,10 @@ console.log('2) 语义等价：缓存与否返回同样的 others')
 
     // 修复前：每次重扫
     async function uncached(rel, cwd) {
-      const roots = await readdir(snapRoot, { withFileTypes: true })
       const others = []
-      for (const dirent of roots) {
-        if (!dirent.isDirectory() || dirent.name === self) continue
-        const data = await readOwned(dirent.name)
+      for (const entry of sessionDirs) {
+        if (entry.name === self) continue
+        const data = await readOwned(entry.name)
         if (data === undefined) continue
         if (data.cwd !== undefined && cwd !== undefined && (await normalizeCwd(data.cwd)) !== cwd) continue
         if (data.files[rel] !== undefined) others.push(data.files[rel])
@@ -99,11 +122,10 @@ console.log('2) 语义等价：缓存与否返回同样的 others')
     }
     // 修复后：一次建缓存
     async function buildCache(cwd) {
-      const roots = await readdir(snapRoot, { withFileTypes: true })
       const records = []
-      for (const dirent of roots) {
-        if (!dirent.isDirectory() || dirent.name === self) continue
-        const data = await readOwned(dirent.name)
+      for (const entry of sessionDirs) {
+        if (entry.name === self) continue
+        const data = await readOwned(entry.name)
         if (data === undefined) continue
         if (data.cwd !== undefined && cwd !== undefined && (await normalizeCwd(data.cwd)) !== cwd) continue
         records.push(data.files)
@@ -118,11 +140,12 @@ console.log('2) 语义等价：缓存与否返回同样的 others')
 
     // 取一个真实 cwd 与几个真实 rel：扫到第一个有文件的 owned.json
     let anyOwned
-    for (const dirent of sessionDirs) {
-      const data = await readOwned(dirent.name)
+    for (const entry of sessionDirs) {
+      const data = await readOwned(entry.name)
       if (data !== undefined && data.cwd !== undefined && Object.keys(data.files ?? {}).length > 0) {
         anyOwned = data
-        self = dirent.name
+        self = entry.name
+        selfDir = entry.dir ?? dirOf.get(entry.name)
         break
       }
     }
