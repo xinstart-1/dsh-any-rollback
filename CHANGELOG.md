@@ -1,5 +1,56 @@
 # 更新日志
 
+## [0.19.1-any.28] - 2026-11-06
+
+**影响清单超时**：回退弹窗显示「无法获取影响清单：preview request timed out」。
+
+### 现象（截图 image-23）
+
+405 修好之后（路由通了），弹窗改成一直转圈到超时：
+`preview request timed out`。实测宿主处理一次 preview 要 **6.6~19 秒**，
+而前端预算是 8 秒（`TIMEOUT_MS = 8e3`）。
+
+### 根因：O(候选路径 × 会话数) 的重复读盘
+
+`ArtifactTracker.plan()` 对**每个候选路径**都调用 `ownershipFor()` 判断归属，
+而 `ownershipFor()` 每次调用都会：
+
+1. `readdir(快照根目录)` —— 遍历全部会话目录；
+2. 对**每个其他会话** `readOwned()` —— 读 `owned.json` 并 `JSON.parse`；
+3. 对每个 cwd 做一次 `realpath()`。
+
+实测本机 44 个会话目录时单次调用 **132ms**。一次回退的候选路径有 157 个 →
+**20 秒**。而同一批账本在同一次 `plan` 里不可能变，全部是重复 IO。
+
+（`store.impactsAfter` 与 `walkWorkspace` 都实测很快：161 个 entry 读 33ms、
+332 个文件扫 13ms —— 慢的不是它们。）
+
+### 修复
+
+同一次 `plan()` / `restore()` 内共享一份「其他会话账本」快照缓存：
+
+| 位置 | 改动 |
+| --- | --- |
+| `lib/artifact-track.js` | 新增 `otherOwnedFor(sessionId, cwd, cache)`：按 `sessionId\|cwd` 建缓存，一次遍历拿到全部其他会话的 `files` |
+| `lib/artifact-track.js` | `ownershipFor(sessionId, rel, cwd, cache)` 复用该缓存；省略 cache 时行为与旧版完全一致 |
+| `lib/artifact-track.js` | `plan()` 与 `restore()` 各建一个 `ledgerCache = new Map()`，并传给**全部** `ownershipFor` 调用（含 `lastWriterVerdict` 透传的 `opts.ledgerCache`） |
+
+总开销从 O(files × sessions) 降为 O(sessions + files)。实测 35 个 rel：
+**5435ms → 191ms（28.5×）**，回到 8 秒预算内。
+
+缓存只在单次 plan/restore 内有效，不跨请求 —— 不会读到过期账本。
+
+### 测试
+
+新增 `tests/regen.preview-timeout.mjs`（9 项）：
+
+1. 缓存机制存在，且 `plan()` / `restore()` 内**每一处** `ownershipFor` 调用都带上缓存；
+2. 用真实快照目录对比「缓存」与「逐次读取」返回的 `others` **完全一致**（语义等价，不是只快不准）。
+
+把 `lib/artifact-track.js` 还原到 any.27 后，该测试 7 项变红。
+
+全部 17 个测试文件：16 通过 / 1 跳过 / 0 失败。`scripts/verify.mjs` 全项一致。
+
 ## [0.19.1-any.27] - 2026-11-06
 
 **回退弹窗报「无法获取影响清单：HTTP 405」**：点 ↶ 回退，影响清单永远出不来。
