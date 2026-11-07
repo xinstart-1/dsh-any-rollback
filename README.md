@@ -176,9 +176,9 @@ node scripts\verify.mjs "<包目录>"        # 检查任意解包目录
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `lib/index.js` | `eba61cdff42870e65efe6460b8c6e6b90691a4b9133882d27c2d64e41e9c8946` |
-| `lib/artifact-track.js` | `a2ce62be39cf34aacf168ca197e6bc44c55944f716255a8cfac3b2c72fa0f977` |
-| `lib/client.js` | `dc85d3d331b442234513717097ba487b1d936c8972ac03f31a39fcecc94b8c30` |
+| `lib/index.js` | `b4aeb28dbde457d74e620c0e69ec6d3049a3aa5e7ffb02d54b15ec3c2fd3359e` |
+| `lib/artifact-track.js` | `bfa582690acfeb2aa90d0fc9fe04c9d37dda764d156f71695e5ce83791fbcb80` |
+| `lib/client.js` | `c312cd5c2d570dbfd456ccf1976993c1f40571b776c3e8363e0d44a42d1e6584` |
 
 > tarball 自身的摘要会随包内 README 变化（自引用），因此不写死在文档里；
 > 以 `dist/` 下实际文件为准（`Get-FileHash` / `sha256sum`），或直接对照 Release 附件页。

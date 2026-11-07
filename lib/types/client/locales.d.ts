@@ -15,6 +15,9 @@ export declare const en: {
     'popover.chat.hint': string;
     'popover.both': string;
     'popover.both.hint': string;
+    'popover.both.hint.file': string;
+    'popover.both.hint.files': string;
+    'popover.files.more': string;
     'popover.checking': string;
     'popover.noChanges': string;
     'popover.backupDisabled': string;
@@ -76,6 +79,9 @@ export declare const CLIENT_DICTS: {
         'popover.chat.hint': string;
         'popover.both': string;
         'popover.both.hint': string;
+        'popover.both.hint.file': string;
+        'popover.both.hint.files': string;
+        'popover.files.more': string;
         'popover.checking': string;
         'popover.noChanges': string;
         'popover.backupDisabled': string;
@@ -104,6 +110,6 @@ export declare const CLIENT_DICTS: {
         'cleanup.readonly': string;
         'cleanup.unavailable': string;
     };
-    zh: Record<"backup.off" | "backup.on" | "backup.title" | "button.aria" | "button.retract.aria" | "button.retract.title" | "button.title" | "cleanup.auto" | "cleanup.auto.off" | "cleanup.auto.on" | "cleanup.invalid" | "cleanup.maxAge" | "cleanup.maxAge.hint" | "cleanup.overridden" | "cleanup.readonly" | "cleanup.reset" | "cleanup.save" | "cleanup.saveFailed" | "cleanup.saving" | "cleanup.unavailable" | "popover.back" | "popover.backupDisabled" | "popover.both" | "popover.both.hint" | "popover.cancel" | "popover.chat" | "popover.chat.hint" | "popover.checking" | "popover.confirm" | "popover.impact.delete" | "popover.impact.failed" | "popover.impact.loading" | "popover.impact.none" | "popover.impact.restore" | "popover.noChanges" | "popover.noText" | "popover.retract.confirm" | "popover.retract.hint" | "popover.retract.target" | "popover.retract.title" | "popover.title", string>;
-    ja: Record<"backup.off" | "backup.on" | "backup.title" | "button.aria" | "button.retract.aria" | "button.retract.title" | "button.title" | "cleanup.auto" | "cleanup.auto.off" | "cleanup.auto.on" | "cleanup.invalid" | "cleanup.maxAge" | "cleanup.maxAge.hint" | "cleanup.overridden" | "cleanup.readonly" | "cleanup.reset" | "cleanup.save" | "cleanup.saveFailed" | "cleanup.saving" | "cleanup.unavailable" | "popover.back" | "popover.backupDisabled" | "popover.both" | "popover.both.hint" | "popover.cancel" | "popover.chat" | "popover.chat.hint" | "popover.checking" | "popover.confirm" | "popover.impact.delete" | "popover.impact.failed" | "popover.impact.loading" | "popover.impact.none" | "popover.impact.restore" | "popover.noChanges" | "popover.noText" | "popover.retract.confirm" | "popover.retract.hint" | "popover.retract.target" | "popover.retract.title" | "popover.title", string>;
+    zh: Record<"backup.off" | "backup.on" | "backup.title" | "button.aria" | "button.retract.aria" | "button.retract.title" | "button.title" | "cleanup.auto" | "cleanup.auto.off" | "cleanup.auto.on" | "cleanup.invalid" | "cleanup.maxAge" | "cleanup.maxAge.hint" | "cleanup.overridden" | "cleanup.readonly" | "cleanup.reset" | "cleanup.save" | "cleanup.saveFailed" | "cleanup.saving" | "cleanup.unavailable" | "popover.back" | "popover.backupDisabled" | "popover.both" | "popover.both.hint" | "popover.both.hint.file" | "popover.both.hint.files" | "popover.cancel" | "popover.chat" | "popover.chat.hint" | "popover.checking" | "popover.confirm" | "popover.files.more" | "popover.impact.delete" | "popover.impact.failed" | "popover.impact.loading" | "popover.impact.none" | "popover.impact.restore" | "popover.noChanges" | "popover.noText" | "popover.retract.confirm" | "popover.retract.hint" | "popover.retract.target" | "popover.retract.title" | "popover.title", string>;
+    ja: Record<"backup.off" | "backup.on" | "backup.title" | "button.aria" | "button.retract.aria" | "button.retract.title" | "button.title" | "cleanup.auto" | "cleanup.auto.off" | "cleanup.auto.on" | "cleanup.invalid" | "cleanup.maxAge" | "cleanup.maxAge.hint" | "cleanup.overridden" | "cleanup.readonly" | "cleanup.reset" | "cleanup.save" | "cleanup.saveFailed" | "cleanup.saving" | "cleanup.unavailable" | "popover.back" | "popover.backupDisabled" | "popover.both" | "popover.both.hint" | "popover.both.hint.file" | "popover.both.hint.files" | "popover.cancel" | "popover.chat" | "popover.chat.hint" | "popover.checking" | "popover.confirm" | "popover.files.more" | "popover.impact.delete" | "popover.impact.failed" | "popover.impact.loading" | "popover.impact.none" | "popover.impact.restore" | "popover.noChanges" | "popover.noText" | "popover.retract.confirm" | "popover.retract.hint" | "popover.retract.target" | "popover.retract.title" | "popover.title", string>;
 };

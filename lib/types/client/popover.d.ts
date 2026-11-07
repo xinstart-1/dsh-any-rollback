@@ -2,7 +2,9 @@
  * The rewind mode-selection popover (plain DOM, no React). Step two of the
  * interaction: the target is already fixed (the clicked message); the popover
  * offers the two modes. Choosing "both" fetches the impact list over the host
- * RPC channel and shows it before confirming.
+ * RPC channel and shows it before confirming; the fetched list is rendered
+ * inline in the mode step too (file count in the option hint plus the first
+ * few paths), so the scope of the file restore is visible before the choice.
  *
  * Keyboard: ↑/↓ move focus across the step's ACTION buttons only (the two
  * modes, or the confirm button on the impact step), Enter activates the

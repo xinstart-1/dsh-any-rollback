@@ -6,7 +6,10 @@
  * @module dsh-rewind/client/host-rpc
  */
 import type { RewindCandidate } from './candidates.ts';
-/** One file affected by a rewind. */
+/**
+ * One file affected by a rewind. `path` is absolute (it is what the restore
+ * acts on); the popover renders it relative to the reported session cwd.
+ */
 export interface PreviewFileImpact {
     readonly path: string;
     readonly action: 'restore' | 'delete';
@@ -16,6 +19,8 @@ export type PreviewOutcome = {
     readonly kind: 'success';
     readonly files: readonly PreviewFileImpact[];
     readonly backupOff: boolean;
+    /** Session workspace root, used only to display workspace-relative paths. */
+    readonly cwd?: string;
 } | {
     readonly kind: 'error';
     readonly text: string;
