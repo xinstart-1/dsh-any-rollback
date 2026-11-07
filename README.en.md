@@ -111,6 +111,14 @@ editing is needed.
 The backup root is a sibling of the workspace, never a subtree of it. Deleting it loses rewind history but
 never touches project files.
 
+## See which files a rewind will touch
+
+After clicking ↶ next to a message, the mode menu lists the workspace files this rewind would affect: the "Rewind conversation and files" hint carries the file count, and each path is spelled out below as "Restore <path>" or "Delete <path>". Choosing that mode continues to the confirm step, which still lists every path.
+
+![Rewind mode menu: before, only two hint lines; after, the affected files are listed](docs/images/rewind-impact-menu.png)
+
+Paths render workspace-relative (like git status); paths outside the workspace keep their absolute form.
+
 ## Install
 
 ### From the release (recommended)

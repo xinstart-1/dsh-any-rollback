@@ -52,7 +52,8 @@
     "LICENSE",
     "CHANGELOG.md",
     "locale/*.json",
-    "assets/icon.svg"
+    "assets/icon.svg",
+    "docs/images"
   ],
   "dsh": {
     "bundle": {
