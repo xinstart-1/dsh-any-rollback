@@ -144,7 +144,16 @@ function isProtected(rel) {
   if (s.includes('manifests')) return true
   if (s.includes('owned.json')) return true
   if (s.includes('artifacts') && s.includes('snapshots')) return true
+  // 工作区分组目录 ws-<hash>/ 永远不是可删除单元：它下面装着同一工作区的
+  // 全部会话。--prune-sessions 只允许删具体的会话目录（ws-x/<sid>）。
+  if (s.length === 1 && s[0].startsWith('ws-')) return true
   return false
+}
+
+/** 工作区分组目录名：`ws-<hash>`，它本身不是会话，绝不可整组删除。 */
+function isWorkspaceGroup(rel) {
+  const s = rel.split('/').filter(Boolean)
+  return s.length === 1 && s[0].startsWith('ws-')
 }
 
 /** 断言目标位于 <会话>/artifacts/blobs/ 之下且不在任何受保护目录里。 */
@@ -500,7 +509,9 @@ async function measureSession(root, name) {
 
 function activeSessionMatches(name, active) {
   if (!active) return false
-  return name === active || name === 'session-' + active || name.endsWith(active)
+  // name 可能是 `ws-<hash>/<sid>`（两层布局）；只比最后一段的会话名。
+  const leaf = name.split('/').filter(Boolean).pop() ?? name
+  return leaf === active || leaf === 'session-' + active || leaf.endsWith(active)
 }
 
 async function analyze(root, opts) {
@@ -515,6 +526,7 @@ async function analyze(root, opts) {
 
   const sessionNames = []
   const skippedDotDirs = []
+  const workspaceGroups = []
   let globalBlobStore = null
   for (const e of rootEnts) {
     if (e.name.startsWith('.')) {
@@ -528,7 +540,24 @@ async function analyze(root, opts) {
       }
       continue // 未来的全局 blob 库，单独计数，绝不混进会话
     }
-    if (e.isDirectory()) sessionNames.push(e.name)
+    if (!e.isDirectory()) continue
+    // 布局是「工作区 / 会话」两层：ws-<hash>/ 是**分组目录**，不是会话。
+    // 旧实现把它当成一个会话名，于是 measureSession 去 stat
+    // ws-abc/artifacts/*、ws-abc/rescue、ws-abc/.pending 全部不存在 →
+    // has* 全 false → evictable()=true → --prune-sessions 把整个工作区分组
+    // 连同其中所有会话的检查点/manifest/journal/quarantine/rescue 一次删光。
+    // 这里展开成真实的会话目录，并单独记下分组名，禁止对分组本身执行删除。
+    if (e.name.startsWith('ws-')) {
+      workspaceGroups.push(e.name)
+      const inner = await readdir(join(root, e.name), { withFileTypes: true }).catch(() => [])
+      for (const child of inner) {
+        if (!child.isDirectory()) continue
+        if (child.name === 'workspace.json') continue
+        sessionNames.push(e.name + '/' + child.name)
+      }
+      continue
+    }
+    sessionNames.push(e.name)
   }
   sessionNames.sort()
 
@@ -1103,10 +1132,21 @@ async function pruneSessions(root, sessions, days, active, evictable, r) {
     enforce(evictable(s), '剪枝目标未通过护栏，拒绝删除：' + s.name)
     if (Number(s.newestMs) >= cutoffMs) continue
     const abs = join(root, s.name)
-    // 整目录删除是本脚本唯一的粗粒度操作：确认它是根下的直接子目录名
-    enforce(!isAbsolute(s.name) && !s.name.includes('/') && !s.name.includes('\\'), '非法会话名：' + s.name)
-    enforce(!s.name.startsWith('.'), '拒绝删除点目录：' + s.name)
+    // 整目录删除是本脚本唯一的粗粒度操作：拒绝绝对路径与反斜杠名（下方再逐段校验层级）
+    enforce(!isAbsolute(s.name) && !s.name.includes('\\'), '非法会话名：' + s.name)
+    // 整目录删除是本脚本唯一的粗粒度操作。s.name 可能是两段
+    // `ws-<hash>/<sid>`：允许这种形状，但必须逐段校验，且**永远不允许**
+    // 只删第一段（那会把整个工作区的所有会话一次删光）。
+    const parts = s.name.split('/').filter(Boolean)
+    enforce(!isAbsolute(s.name), '非法会话名：' + s.name)
+    enforce(parts.length === 1 || (parts.length === 2 && parts[0].startsWith('ws-')), '非法会话名（层级不对）：' + s.name)
+    enforce(parts.every((p) => p !== '.' && p !== '..' && !p.startsWith('.')), '拒绝删除点目录：' + s.name)
+    enforce(!isWorkspaceGroup(s.name), '拒绝删除整个工作区分组（应删到具体会话）：' + s.name)
     enforce(!isProtected(s.name), '拒绝删除受保护目录：' + s.name)
+    // 删除前确认目标确实在快照根内且不是根本身。
+    const resolvedAbs = resolve(abs)
+    const resolvedRoot = resolve(root)
+    enforce(resolvedAbs !== resolvedRoot && resolvedAbs.startsWith(resolvedRoot + sep), '删除目标越出快照根：' + s.name)
     await rm(abs, { recursive: true, force: true })
     s._pruned = true
     deleted++

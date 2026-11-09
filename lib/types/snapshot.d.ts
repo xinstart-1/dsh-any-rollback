@@ -746,10 +746,27 @@ export declare class SnapshotStore {
      * Reconcile the session's restore journals against the real disk — the
      * "host restart" account: for every interrupted op, report which paths
      * already match its goal (restored) and which are still pending, and expose
-     * any recorded failures. Journals whose goal is already fully reached on
-     * disk (e.g. a later rewind completed the work) are auto-healed to their
-     * terminal state and not reported. A corrupt journal is reported
-     * `recovery-required` — never silently dropped.
+     * any recorded failures.
+     *
+     * **NOT read-only.** When an op's goal is already fully reached on disk
+     * (e.g. a later rewind completed the work), this method AUTO-HEALS it: it
+     * rewrites the journal to its terminal state (`completed` /
+     * `rolled-back`) and persists that. Two consequences:
+     *
+     * - The effect is irreversible: a terminal journal is later recycled
+     *   together with its `rescue/` bytes, and {@link rollbackRestore} refuses
+     *   a terminal journal — so calling this can permanently destroy the
+     *   ability to UNDO that restore.
+     * - The reached-test is a byte comparison against the goal only. If
+     *   something else leaves the file identical to the goal (a git checkout,
+     *   a template reset, another session writing the same content), the op is
+     *   considered done and healed even though this restore never completed.
+     *
+     * Call it when you WANT that self-healing (a startup recovery sweep). For a
+     * pure report, read the journals and compare yourself instead.
+     *
+     * A corrupt journal is reported `recovery-required` — never silently
+     * dropped.
      *
      * Deliberately NOT gated on the session's `store` marker: a journal is fully
      * self-describing (`version` plus byte references), and refusing to finish an
@@ -760,7 +777,8 @@ export declare class SnapshotStore {
      *
      * @param sessionId - session whose journals to reconcile.
      * @param probe - current-disk state probe (defaults to the real FS).
-     * @returns one report per non-terminal journal still needing attention.
+     * @returns one report per non-terminal journal still needing attention. Ops
+     *   that were auto-healed are omitted from the result.
      */
     reconcileRestores(sessionId: string, probe?: DiskProbe): Promise<RestoreReconcileReport[]>;
     /**

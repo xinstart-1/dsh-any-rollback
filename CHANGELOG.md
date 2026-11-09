@@ -1,5 +1,129 @@
 # 更新日志
 
+## [0.19.1-any.32] - 2026-11-09
+
+**跨会话回退的 3 个 P0 与 5 个 P1 全部修复**，并让「因归属判不清而没动的文件」不再静默。
+
+同一工作区里两个会话共用一个快照根是设计使然（`ws-<hash>/` 分组），但两套还原引擎的
+跨会话判定此前只覆盖了其中一条通道，且 Windows 上崩溃补偿从未真正落盘过。本轮按
+[AUDIT.md](AUDIT.md) P0-2 的方向补齐所有通道，并把每一条结论都用真实类 + 真实文件
+系统的探针钉住（先红后绿）。
+
+### P0：Windows 上 restore journal 一条都写不出（崩溃补偿完全失效）
+
+`sourceToRef` 用 `path.relative()` 产出 `rescue\op-x\0.before`（反斜杠），而
+`isSafeBackupRef` 按 `/` 分段并显式拒绝反斜杠 → `journalToJson` 每次都抛 →
+`saveJournal` 的裸 `catch {}` 把它吞掉。
+
+后果：`continueRestore` / `rollbackRestore` / `reconcileRestores` 三条崩溃恢复通道
+在 Windows 上全部空转，且**用户看不到任何报错**。
+
+修复：ref 一律转成正斜杠再交给校验器；`saveJournal` 的失败改为 `logger.warn` 报出
+（降级仍然保留，不再静默）。`SnapshotStore` 因此新增可选 `opts.logger`。
+
+### P0：边界差分把别人用 bash 写的文件认领成自己的
+
+`updateOwnedFromBoundary` 把「本会话清单里变了」直接当成「本会话写的」。会话 A 空跑
+一轮时，会话 B 经 bash / 脚本 / 子代理产出的文件（A 的上一份清单里没有）会被 A 认领
+——之后 A 回退时 `lastWriterVerdict` 返回 `self`，plan 判 delete，B 的文件被移进 A 的
+隔离区。判定侧再严格也没用，因为 `mine` 本身是假的。
+
+修复：争议判定同时查**两条证据**——别的会话的归属账本（覆盖 write/edit，经
+`noteWrite`）与别的会话的清单（回合边界全量扫描，覆盖 bash / 子会话 / noteWrite 失败）。
+任一命中即不认领（不写账本，判定侧按 `unknown` 保守跳过）。
+
+### P0：无账本时 `restore` 无条件放行，直接覆盖别人新建的文件
+
+`restore` 的 TOCTOU recheck 在 `owned === undefined`（升级前的旧会话 / 账本损坏）时
+直接 `return 'legacy-ok'`。于是 plan 时文件不存在、restore 前 B 新建了同名文件 →
+`copyFile` + `rename` 覆盖，既不隔离也无备份，**字节真正销毁**。
+
+修复：区分「会不会销毁字节」——目标不存在则放行（写进去不销毁任何东西）；目标存在
+但内容不同则必须能证明是自己的，否则跳过并如实报出。
+
+### P1：`evictToQuota` 会删光所有会话目录
+
+配额基数 `before` 是整根物理占用，**包含不可回收的共享 `_blobs`**，而候选集里没有
+`_blobs`。一旦 `_blobs` 自身超过配额（compact 把各会话 blob 收编进全局仓后极常见），
+`current` 永远降不到阈值，循环就把每一个未受保护的会话目录全删光，删完还超标。
+这条路径由自动 compact 每小时跑一次触发。
+
+修复：先算可回收总量，达不到配额就整轮不淘汰（删了也没用，只会白丢数据），并如实
+返回 `insufficientReclaimable` / `needToFree` / `reclaimable`。
+
+### P1：`snapshot-doctor` 把工作区分组当成单个会话
+
+两层布局下 `ws-<hash>/` 是分组目录，`measureSession` 却把它当一个会话量——去 stat
+`ws-abc/artifacts/*`、`ws-abc/rescue`、`ws-abc/.pending` 全部不存在 → `has*` 全 false →
+`evictable()` 为真 → `--prune-sessions` 把整个工作区分组连同其中**所有**会话的检查点 /
+manifest / journal / quarantine / rescue 一次 `rm -rf`。
+
+修复：`analyze` 把 `ws-*` 展开成真实的会话目录（`ws-x/<sid>`），并新增四条护栏——
+拒绝删除分组本身、拒绝层级不对的名字、拒绝点目录、删除前断言目标在快照根内且不是根。
+`activeSessionMatches` 只比最后一段，活动会话因此重新受保护。
+
+### P1：`hasProtectedData` 漏了 journal 与非终态 `.before`
+
+`rescue` 捕获全部失败时 `rescue/` 是空的，此时若把会话目录整组删掉，唯一一份「回退
+做到一半」的证据就消失了，工作区停在半回退状态且无人知晓。现在非终态 journal 与
+不可解析的 journal 都算受保护；`QUOTA_PROTECTED_DIRS` 补上 `artifacts/blobs`。
+
+### P1：预览说「不碰」，执行却覆盖
+
+`isForeignAbsoluteStrict` 在文件存在时只用「哈希相等」取证。B 的账本记的是 v2、磁盘
+已被 B 改成 v4（这次没记账）时哈希失配 → 无证据 → 放行，A 的旧 checkpoint 覆盖 B。
+用户看到的预览明确说「不碰这个文件」，执行却写了它。
+
+修复：本会话无账本时，只要**别的会话账本**里出现过该路径就判 foreign（账本记的是
+「写过」，比清单的「那时存在」强）；清单只按哈希相等取证（基线清单含全部文件，用它
+判归属会误伤本会话自己的文件）。本会话有账本但哈希不等时，同样看两条证据是否有人
+声称过该路径。
+
+### P1：GC 在布局映射失效时会把整个共享仓当孤儿
+
+可达性扫描依赖进程内 `workspaces` 映射；映射缺失时（新进程尚未 bind、
+`migrateFlatSessions` 未跑完）会漏掉嵌套在 `ws-xxx/` 下的会话，读到 0 份清单 →
+`live` 为空 → 整个 `_blobs` 被判成孤儿。新增 `dirsWithManifests()` 直接扫磁盘两层
+布局（不依赖任何进程内状态），并加熔断：扫到 0 份清单而仓内仍有 blob 时整轮拒绝回收。
+
+### 可见性：归属判不清的路径不再静默
+
+以前门禁挡掉的路径是直接 `continue`，不进任何计数——「只还原了一半」看起来和
+完全成功一模一样。现在 checkpoint 侧 `foreignSkipped` 与 artifact 侧
+`summary.foreignSkipped` 独立计数，在 rewind / regen 的结果里各报一行：
+
+```
+已撤回 seq 12 及之后内容; 还原 3 个文件; 2 个文件未改动（已被同一工作区的另一个会话修改）
+```
+
+与 `artifact.unbacked`（「无内容备份」）分开报——两件事的补救方式完全不同
+（前者不可补救，后者可重建基线）。
+
+`translate` 增加英文回退（`dict[key] ?? en[key] ?? key`）：新增文案漏翻时显示英文，
+不再泄漏 `foreign.count` 这类内部标识符。
+
+### 文档：`reconcileRestores` 不是只读
+
+docstring 与 `lib/types/snapshot.d.ts` 都明确标注 **NOT read-only**：目标已达成时它会
+把 journal 改写成终态并落盘，而终态 journal 随后会被 `pruneTerminalJournals` 连同
+`rescue/` 字节一起回收，`rollbackRestore` 也拒绝终态 journal——**调用它可能永久
+消除撤销那次回退的能力**。且达成判定只是字节比对，git checkout / 模板重置 / 别人写入
+相同内容都会误判。
+
+### 测试
+
+新增 [tests/checkpoint.cross-session.mjs](tests/checkpoint.cross-session.mjs)（19 项），
+钉住七条通道：planRestore / restoreAfter 尊重 `opts.isForeign`、impactsAfter 与实际
+动作一致、continueRestore 崩溃补偿也过门禁、顺境不误伤、门禁缺失时向后兼容、门禁
+抛错必须可见、以及「账本空白时靠清单兜底」。
+
+同时修正一处**假绿**：原第 4 组断言 `Array.isArray(ops)`，而 `listJournals` 无 journal
+时返回 `[]`，`Array.isArray([]) === true`——journal 从未落盘时这条照样绿。现改为断言
+非空，并用 `opts.crash` 钩子真正制造一次崩溃。
+
+全部 20 个测试文件：18 通过 / 2 跳过 / 0 失败（跳过原因为缺少解包的 cordis 与会话
+日志不存在，与本轮改动无关）。`scripts/verify.mjs` 全项一致。
+
 ## [0.19.1-any.31] - 2026-11-07
 
 **回退模式菜单直接显示会回退哪些文件**，选之前就能看清范围。
