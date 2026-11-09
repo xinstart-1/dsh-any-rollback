@@ -86,7 +86,10 @@ console.log('用例 1：相同字节在多个会话里只落一份物理副本')
 // ── 2. 不同内容各存一份；内容变化后旧 blob 不再可达即被回收 ────────────────
 console.log('用例 2：内容变化生成新 blob，裁剪清单后旧 blob 被全局 GC 回收')
 {
-  const { tracker, root, cwd, base } = await setup('gc', { keepManifests: 2 })
+  // gcGraceMs: 0 —— 本用例验证「不可达即回收」的语义本身；生产默认 15 分钟
+  // 宽限期（保护「字节已落仓、清单未落盘」的窗口）另由
+  // tests/checkpoint.cross-session.mjs 钉住。
+  const { tracker, root, cwd, base } = await setup('gc', { keepManifests: 2, gcGraceMs: 0 })
   for (let turn = 1; turn <= 8; turn++) {
     await writeFile(join(cwd, 'clip.mp4'), Buffer.alloc(2048 + turn, turn))
     await tracker.onTurnEnd('s', turn * 10)

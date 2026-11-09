@@ -109,7 +109,9 @@ console.log('用例 2：容差窗口内的同尺寸改写必须被记录')
 // ── 3. 内容缓存回收：裁掉的清单所引用的 blob 必须被清理 ──────────────────
 console.log('用例 3：清单裁剪后回收不可达的内容缓存')
 {
-  const { tracker, root, cwd, base } = await setup('gc', { keepManifests: 2 })
+  // gcGraceMs: 0 —— 本用例验证「不可达即回收」的语义本身；生产默认 15 分钟宽限期
+  // （保护「字节已落仓、清单未落盘」的窗口）另由 tests/checkpoint.cross-session.mjs 钉住。
+  const { tracker, root, cwd, base } = await setup('gc', { keepManifests: 2, gcGraceMs: 0 })
   for (let turn = 1; turn <= 8; turn++) {
     await writeFile(join(cwd, 'clip.mp4'), Buffer.alloc(2048 + turn, turn))
     await tracker.onTurnEnd('s', turn * 10)
